@@ -39,9 +39,9 @@ cargo add iced --features wgpu
 
 ```rust
 use iced_nodegraph::prelude::*;
-use iced::{Element, Point};
+use iced::{Point, Widget};
 
-fn view(&self) -> Element<'_, Message> {
+fn view(&self) -> impl Widget<Message> + '_ {
     node_graph()
         .on_connect(|from, to| Message::Connected(from, to))
         .on_move(|delta, node_ids| Message::Moved(delta, node_ids))
@@ -50,7 +50,6 @@ fn view(&self) -> Element<'_, Message> {
         .push_node(node(1, Point::new(525.0, 175.0), another_node()))
         // An edge connects two pins, addressed as (node id, pin id).
         .push_edge(edge((), PinRef::new(0, 0), PinRef::new(1, 0)))
-        .into()
 }
 ```
 
@@ -72,7 +71,7 @@ Every demo runs natively and in the browser.
 
 | Demo | Live | Shows |
 |------|------|-------|
-| [`hello_world`](https://github.com/tuco86/iced_nodegraph/tree/main/demos/hello_world) | [run](https://nodegraph.doodleshnookie.net/#demo-hello_world) | Command palette, theme switching, selection, clone/delete, persistence |
+| [`hello_world`](https://github.com/tuco86/iced_nodegraph/tree/main/demos/hello_world) | [run](https://nodegraph.doodleshnookie.net/#demo-hello_world) | Selection, clone/delete, persistence |
 | [`styling`](https://github.com/tuco86/iced_nodegraph/tree/main/demos/styling) | [run](https://nodegraph.doodleshnookie.net/#demo-styling) | Style presets and live node styling controls |
 | [`interaction`](https://github.com/tuco86/iced_nodegraph/tree/main/demos/interaction) | [run](https://nodegraph.doodleshnookie.net/#demo-interaction) | Pin direction and type rules, connection validation, snap feedback |
 | [`500_nodes`](https://github.com/tuco86/iced_nodegraph/tree/main/demos/500_nodes) | [run](https://nodegraph.doodleshnookie.net/#demo-500_nodes) | 500 nodes / 640 edges stress test with a runtime stats overlay |

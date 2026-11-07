@@ -56,9 +56,9 @@ pub(super) struct CableHit {
 /// = &mut *ctx;`) so disjoint field borrows preserve the inline borrow
 /// choreography of the original single-function form (`tree.state` vs
 /// `tree.children` vs `shell`).
-struct UpdateCtx<'a, 'b, 'm, Message> {
+struct UpdateCtx<'a, 'm, Message> {
     tree: &'a mut Tree,
-    layout: Layout<'b>,
+    layout: Layout,
     event: &'a Event,
     world_cursor: mouse::Cursor,
     screen_cursor: mouse::Cursor,
@@ -77,10 +77,9 @@ where
         &mut self,
         tree: &mut Tree,
         event: &Event,
-        layout: Layout<'_>,
+        layout: Layout,
         screen_cursor: mouse::Cursor,
         renderer: &Renderer,
-        clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
@@ -394,19 +393,20 @@ where
                             continue;
                         };
                         let element = &mut node.element;
+                        let Some(child_layout) =
+                            node_layout(layout, &ctx.tree.children, node_index)
+                        else {
+                            continue;
+                        };
                         let Some(child_tree) = ctx.tree.children.get_mut(node_index) else {
                             continue;
                         };
-                        let Some(child_layout) = layout.children().nth(node_index) else {
-                            continue;
-                        };
-                        element.as_widget_mut().update(
+                        element.update(
                             child_tree,
                             event,
                             child_layout,
                             world_cursor,
                             renderer,
-                            clipboard,
                             ctx.shell,
                             viewport,
                         );
@@ -517,8 +517,13 @@ where
                         // across it would conflict with every handler call.
                         let state = ctx.tree.state.downcast_mut::<NodeGraphState>();
                         if let Some(target) = frame_target
-                            && let Some(world_aabb) =
-                                resolve_focus_target(self, layout, state, &target)
+                            && let Some(world_aabb) = resolve_focus_target(
+                                self,
+                                layout,
+                                &ctx.tree.children,
+                                state,
+                                &target,
+                            )
                         {
                             self.begin_focus(
                                 state,
@@ -698,7 +703,7 @@ where
 
     /// Handles an in-progress edge-cutting drag: extends the cut trail on cursor
     /// move and commits every pending cut on release.
-    fn handle_edge_cutting(&self, ctx: &mut UpdateCtx<'_, '_, '_, Message>) {
+    fn handle_edge_cutting(&self, ctx: &mut UpdateCtx<'_, '_, Message>) {
         match ctx.event {
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 if let Some(cursor_position) = ctx.world_cursor.position() {
@@ -762,7 +767,7 @@ where
 
     /// Handles an in-progress graph pan: commits the camera offset on
     /// right-button release.
-    fn handle_graph_pan(&self, ctx: &mut UpdateCtx<'_, '_, '_, Message>, origin: WorldPoint) {
+    fn handle_graph_pan(&self, ctx: &mut UpdateCtx<'_, '_, Message>, origin: WorldPoint) {
         let UpdateCtx {
             tree,
             event,
@@ -801,7 +806,7 @@ where
     /// what it holds stay put relative to each other.
     fn handle_node_drag(
         &self,
-        ctx: &mut UpdateCtx<'_, '_, '_, Message>,
+        ctx: &mut UpdateCtx<'_, '_, Message>,
         node_index: usize,
         followers: &[usize],
     ) {
@@ -855,7 +860,7 @@ where
     /// emits nothing.
     fn handle_anchor_drag(
         &self,
-        ctx: &mut UpdateCtx<'_, '_, '_, Message>,
+        ctx: &mut UpdateCtx<'_, '_, Message>,
         anchor_index: usize,
         origin: WorldPoint,
     ) {
@@ -913,7 +918,7 @@ where
     /// gesture that never moved the node.
     fn handle_resize(
         &self,
-        ctx: &mut UpdateCtx<'_, '_, '_, Message>,
+        ctx: &mut UpdateCtx<'_, '_, Message>,
         node_index: usize,
         origin: LayoutPoint,
         start: Size,
@@ -975,7 +980,7 @@ where
     /// targets and fires `on_connect` immediately on snap (plug behavior).
     fn handle_edge_drag(
         &self,
-        ctx: &mut UpdateCtx<'_, '_, '_, Message>,
+        ctx: &mut UpdateCtx<'_, '_, Message>,
         from_node: usize,
         from_pin: usize,
     ) {
@@ -1004,7 +1009,7 @@ where
 
                     // Check all pins for proximity and validity (use SNAP_THRESHOLD to enter)
                     for (node_index, (node_layout, node_tree)) in
-                        layout.children().zip(&tree.children).enumerate()
+                        layout.iter(&tree.children).enumerate()
                     {
                         for (pin_index, pin_state, (a, b)) in find_pins::<I>(node_tree, node_layout)
                         {
@@ -1106,7 +1111,7 @@ where
     /// (`UNSNAP_THRESHOLD`) fires `on_disconnect` and falls back to `Edge`.
     fn handle_edge_over(
         &self,
-        ctx: &mut UpdateCtx<'_, '_, '_, Message>,
+        ctx: &mut UpdateCtx<'_, '_, Message>,
         from_node: usize,
         from_pin: usize,
         to_node: usize,
@@ -1135,7 +1140,7 @@ where
                     let mut to_dir: Option<PinDirection> = None;
 
                     for (node_index, (node_layout, node_tree)) in
-                        layout.children().zip(&tree.children).enumerate()
+                        layout.iter(&tree.children).enumerate()
                     {
                         for (pin_index, pin_state, (a, b)) in find_pins::<I>(node_tree, node_layout)
                         {
@@ -1210,7 +1215,7 @@ where
     /// anchor where it was pressed; the undo is a pan-button click on the core.
     fn handle_route_drag(
         &self,
-        ctx: &mut UpdateCtx<'_, '_, '_, Message>,
+        ctx: &mut UpdateCtx<'_, '_, Message>,
         edge: usize,
         detached: Option<usize>,
     ) {
@@ -1277,12 +1282,7 @@ where
     /// [`Dragging::Route`].
     ///
     /// Releasing here commits nothing: the attachment was published on snap.
-    fn handle_route_over(
-        &self,
-        ctx: &mut UpdateCtx<'_, '_, '_, Message>,
-        edge: usize,
-        anchor: usize,
-    ) {
+    fn handle_route_over(&self, ctx: &mut UpdateCtx<'_, '_, Message>, edge: usize, anchor: usize) {
         match ctx.event {
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 let Some(cursor_position) = ctx.world_cursor.position() else {
@@ -1397,7 +1397,7 @@ where
 
     /// Handles an in-progress selection box: tracks the moving corner and
     /// commits the intersecting set on release (Shift adds to the selection).
-    fn handle_selection_box(&self, ctx: &mut UpdateCtx<'_, '_, '_, Message>, start: LayoutPoint) {
+    fn handle_selection_box(&self, ctx: &mut UpdateCtx<'_, '_, Message>, start: LayoutPoint) {
         let UpdateCtx {
             tree,
             layout,
@@ -1429,7 +1429,9 @@ where
                     } else {
                         HashSet::new()
                     };
-                    for (node_index, node_layout) in layout.children().enumerate() {
+                    for (node_index, node_layout) in
+                        node_layouts(*layout, &tree.children).enumerate()
+                    {
                         if rects_intersect(&selection_rect, &node_layout.bounds()) {
                             selected.insert(node_index);
                         }
@@ -1459,7 +1461,7 @@ where
     /// snap for the whole group.
     fn handle_group_move(
         &self,
-        ctx: &mut UpdateCtx<'_, '_, '_, Message>,
+        ctx: &mut UpdateCtx<'_, '_, Message>,
         anchor: usize,
         followers: &[usize],
     ) {
@@ -1511,7 +1513,7 @@ where
     /// Absolute rather than incremental, so the viewport marker stays under the
     /// cursor no matter how far the drag has travelled or how the map's extent
     /// changed under it.
-    fn handle_minimap_drag(&self, ctx: &mut UpdateCtx<'_, '_, '_, Message>) {
+    fn handle_minimap_drag(&self, ctx: &mut UpdateCtx<'_, '_, Message>) {
         match ctx.event {
             Event::Mouse(mouse::Event::CursorMoved { .. }) => {
                 if let Some(cursor) = ctx.screen_cursor.position() {
@@ -1563,7 +1565,7 @@ where
     ///
     /// The map's world extent is re-derived from this frame's layout and
     /// camera, so the mapping a press reads is the one the map was drawn with.
-    fn center_camera_from_minimap(&self, ctx: &mut UpdateCtx<'_, '_, '_, Message>, cursor: Point) {
+    fn center_camera_from_minimap(&self, ctx: &mut UpdateCtx<'_, '_, Message>, cursor: Point) {
         let Some(minimap) = self.minimap.as_ref() else {
             return;
         };
@@ -1578,8 +1580,7 @@ where
         let map = minimap::rect(minimap, bounds);
         let visible = state.camera.visible_world_rect(bounds);
         let world = minimap::world_bounds(
-            layout
-                .children()
+            node_layouts(*layout, &tree.children)
                 .map(|child| {
                     let b = child.bounds();
                     WorldRect::new(
@@ -1618,7 +1619,7 @@ where
     ///
     /// This holds every `Dragging::None -> *` transition of the left button;
     /// in-progress transitions live in the `handle_*` methods above.
-    fn handle_left_press(&self, ctx: &mut UpdateCtx<'_, '_, '_, Message>, z_indices: &[usize]) {
+    fn handle_left_press(&self, ctx: &mut UpdateCtx<'_, '_, Message>, z_indices: &[usize]) {
         // A press while another drag is in progress (e.g. left press during a
         // pan) must not hijack the state machine mid-drag.
         if ctx.tree.state.downcast_ref::<NodeGraphState>().dragging != Dragging::None {
@@ -1675,7 +1676,7 @@ where
     /// Screen space, because that is where the map was placed: the press is
     /// tested against the raw cursor, not the camera-inverted one the node hit
     /// tests use.
-    fn try_press_minimap(&self, ctx: &mut UpdateCtx<'_, '_, '_, Message>) -> bool {
+    fn try_press_minimap(&self, ctx: &mut UpdateCtx<'_, '_, Message>) -> bool {
         let Some(minimap) = self.minimap.as_ref() else {
             return false;
         };
@@ -1696,7 +1697,7 @@ where
     ///
     /// Measured against the routed cable, so an edge that wraps an anchor is
     /// cut where it runs.
-    fn try_cut_edge_at_cursor(&self, ctx: &mut UpdateCtx<'_, '_, '_, Message>) -> bool {
+    fn try_cut_edge_at_cursor(&self, ctx: &mut UpdateCtx<'_, '_, Message>) -> bool {
         let Some(cursor_position) = ctx.world_cursor.position() else {
             return false;
         };
@@ -1736,12 +1737,12 @@ where
     /// consumed the press.
     fn try_press_node(
         &self,
-        ctx: &mut UpdateCtx<'_, '_, '_, Message>,
+        ctx: &mut UpdateCtx<'_, '_, Message>,
         node_index: usize,
         cursor_position: Point,
         multi_select_held: bool,
     ) -> bool {
-        let Some(node_layout) = ctx.layout.children().nth(node_index) else {
+        let Some(node_layout) = node_layout(ctx.layout, &ctx.tree.children, node_index) else {
             return false;
         };
         let Some(node_tree) = ctx.tree.children.get(node_index) else {
@@ -1847,7 +1848,7 @@ where
     /// be resolved (caller then tries the next edge).
     fn try_start_unplug(
         &self,
-        ctx: &mut UpdateCtx<'_, '_, '_, Message>,
+        ctx: &mut UpdateCtx<'_, '_, Message>,
         anchor: &PinRef<I>,
         edge: (&PinRef<I>, &PinRef<I>),
         grabbed: (usize, usize),
@@ -1892,7 +1893,7 @@ where
     /// wired (without it a dropped edge cannot persist).
     fn try_start_edge_drag(
         &self,
-        ctx: &mut UpdateCtx<'_, '_, '_, Message>,
+        ctx: &mut UpdateCtx<'_, '_, Message>,
         node_index: usize,
         pin_index: usize,
         pin_id: &I::PinId,
@@ -1931,7 +1932,7 @@ where
     /// the corner is plain node body.
     fn try_start_resize(
         &self,
-        ctx: &mut UpdateCtx<'_, '_, '_, Message>,
+        ctx: &mut UpdateCtx<'_, '_, Message>,
         node_index: usize,
         cursor_position: Point,
         bounds: Rectangle,
@@ -1968,7 +1969,8 @@ where
     /// node drag pay a single flag test.
     fn frame_followers(
         &self,
-        layout: Layout<'_>,
+        layout: Layout,
+        node_trees: &[Tree],
         pressed: &[usize],
         already_moving: impl Fn(usize) -> bool,
     ) -> Vec<usize> {
@@ -1977,10 +1979,12 @@ where
             if !self.nodes.get(frame_index).is_some_and(|node| node.frame) {
                 continue;
             }
-            let Some(frame_bounds) = layout.children().nth(frame_index).map(|l| l.bounds()) else {
+            let Some(frame_bounds) =
+                node_layout(layout, node_trees, frame_index).map(|l| l.bounds())
+            else {
                 continue;
             };
-            for (index, node_layout) in layout.children().enumerate() {
+            for (index, node_layout) in node_layouts(layout, node_trees).enumerate() {
                 if index == frame_index
                     || already_moving(index)
                     || followers.contains(&index)
@@ -1999,7 +2003,7 @@ where
     /// matching drag (`Node` or `GroupMove`, gated on `on_move` being wired).
     fn select_or_drag_node(
         &self,
-        ctx: &mut UpdateCtx<'_, '_, '_, Message>,
+        ctx: &mut UpdateCtx<'_, '_, Message>,
         node_index: usize,
         cursor_position: Point,
     ) {
@@ -2054,7 +2058,8 @@ where
             if current.len() > 1 && already_selected {
                 // Multiple nodes selected, start group move
                 let selected = current.clone();
-                let followers = self.frame_followers(layout, &selected, |i| resolved.contains(&i));
+                let followers = self
+                    .frame_followers(layout, &tree.children, &selected, |i| resolved.contains(&i));
                 state.dragging = Dragging::GroupMove {
                     origin: cursor_position.into_euclid(),
                     anchor: node_index,
@@ -2068,7 +2073,8 @@ where
                 }
             } else {
                 // Single node drag, carrying this frame's contents if it is one
-                let followers = self.frame_followers(layout, &[node_index], |_| false);
+                let followers =
+                    self.frame_followers(layout, &tree.children, &[node_index], |_| false);
                 state.dragging = Dragging::Node {
                     node: node_index,
                     origin: cursor_position.into_euclid(),
@@ -2099,7 +2105,7 @@ where
 
     /// Starts the empty-space press interaction: edge-cutting with COMMAND
     /// held, a selection box otherwise (Shift keeps the current selection).
-    fn start_selection_box_or_cut(&self, ctx: &mut UpdateCtx<'_, '_, '_, Message>) {
+    fn start_selection_box_or_cut(&self, ctx: &mut UpdateCtx<'_, '_, Message>) {
         let UpdateCtx {
             tree,
             world_cursor,
@@ -2157,7 +2163,7 @@ where
     /// press lands on something that button clicks instead: an anchor core to
     /// delete, or a wrap to detach. Either one is provisional - see
     /// [`handle_press_pending`](Self::handle_press_pending).
-    fn handle_pan_press(&self, ctx: &mut UpdateCtx<'_, '_, '_, Message>) {
+    fn handle_pan_press(&self, ctx: &mut UpdateCtx<'_, '_, Message>) {
         let state = ctx.tree.state.downcast_ref::<NodeGraphState>();
         // Never cancel an in-progress node/edge/box drag: that would drop the
         // drag without emitting on_drag_end or committing the move.
@@ -2195,7 +2201,7 @@ where
     ///
     /// Dispatched after the children so a `scrollable` or a nested graph
     /// under the cursor takes the tick first.
-    fn handle_wheel(&self, ctx: &mut UpdateCtx<'_, '_, '_, Message>, delta: &mouse::ScrollDelta) {
+    fn handle_wheel(&self, ctx: &mut UpdateCtx<'_, '_, Message>, delta: &mouse::ScrollDelta) {
         // `position_over` rejects Levitating cursors (sibling above claimed the
         // event in a `stack`) and cursors outside the graph's layout bounds.
         // Without this guard, scrolling above an overlapping widget zooms the
@@ -2241,16 +2247,14 @@ where
     /// the ones the route DRAG needs: a host that only wires
     /// [`on_route_detach`](NodeGraph::on_route_detach) still gets the detach
     /// click.
-    fn press_target_at(&self, ctx: &UpdateCtx<'_, '_, '_, Message>) -> Option<PressTarget> {
+    fn press_target_at(&self, ctx: &UpdateCtx<'_, '_, Message>) -> Option<PressTarget> {
         let cursor_position = ctx.world_cursor.position()?;
         // Anchors and cables are drawn UNDER every node, so they answer only
         // once no node covers the cursor - the same precedence the left press
         // and the cursor icon already follow. Without it, dragging a node over
         // an anchor turns a pan-button click on that node's body into a delete
         // of an anchor the user cannot see.
-        if ctx
-            .layout
-            .children()
+        if node_layouts(ctx.layout, &ctx.tree.children)
             .any(|node| node.bounds().contains(cursor_position))
         {
             return None;
@@ -2278,7 +2282,7 @@ where
     /// jump by however far the cursor got before the press was one.
     fn handle_press_pending(
         &self,
-        ctx: &mut UpdateCtx<'_, '_, '_, Message>,
+        ctx: &mut UpdateCtx<'_, '_, Message>,
         origin_world: WorldPoint,
         origin_screen: Point,
         target: PressTarget,
@@ -2354,7 +2358,7 @@ where
     fn cable_geometry(
         &self,
         tree: &Tree,
-        layout: Layout<'_>,
+        layout: Layout,
     ) -> Vec<(CableGeometry<'_, I>, edge_path::Built)> {
         let pin = |pin: &PinRef<I>| -> Option<Station> {
             let node_index = self.node_index(&pin.node_id)?;
@@ -2389,7 +2393,7 @@ where
     fn oriented_ends(
         &self,
         tree: &Tree,
-        layout: Layout<'_>,
+        layout: Layout,
         edge: usize,
     ) -> Option<(&PinRef<I>, &PinRef<I>)> {
         self.cable_geometry(tree, layout)
@@ -2407,7 +2411,7 @@ where
     pub(super) fn cable_hit_at(
         &self,
         tree: &Tree,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: LayoutPoint,
     ) -> Option<CableHit> {
         let hit = self.cable_zone_at(tree, layout, cursor)?;
@@ -2434,12 +2438,7 @@ where
     /// the cable itself. Picking one cable up front by lateral distance instead
     /// would hand a press on a visible outer ring to whichever cable happens to
     /// run nearer that spot - a wrap belongs to the edge whose ring it is.
-    fn cable_zone_at(
-        &self,
-        tree: &Tree,
-        layout: Layout<'_>,
-        cursor: LayoutPoint,
-    ) -> Option<CableHit> {
+    fn cable_zone_at(&self, tree: &Tree, layout: Layout, cursor: LayoutPoint) -> Option<CableHit> {
         let cables = self.cable_geometry(tree, layout);
         let mut best: Option<(CableHit, f32)> = None;
         for (geometry, built) in &cables {
@@ -2623,7 +2622,7 @@ where
     /// the widget being broken rather than as the feature being off.
     fn try_start_anchor_drag(
         &self,
-        ctx: &mut UpdateCtx<'_, '_, '_, Message>,
+        ctx: &mut UpdateCtx<'_, '_, Message>,
         cursor_position: LayoutPoint,
     ) -> bool {
         let Some(anchor_index) = self.anchor_core_at(ctx.tree, cursor_position) else {
@@ -2680,7 +2679,7 @@ where
     /// cable took the press.
     fn try_press_cable(
         &self,
-        ctx: &mut UpdateCtx<'_, '_, '_, Message>,
+        ctx: &mut UpdateCtx<'_, '_, Message>,
         cursor_position: Point,
     ) -> bool {
         let Some(hit) = self.cable_hit_at(ctx.tree, ctx.layout, cursor_position.into_euclid())
@@ -2737,7 +2736,7 @@ where
     }
 
     /// Reports the route drag just started on `edge` and claims the press.
-    fn publish_route_start(&self, ctx: &mut UpdateCtx<'_, '_, '_, Message>, edge: usize) {
+    fn publish_route_start(&self, ctx: &mut UpdateCtx<'_, '_, Message>, edge: usize) {
         if let Some(handler) = self.on_drag_start.as_ref() {
             ctx.shell.publish(handler(DragInfo::Route {
                 edge_id: self.edges[edge].id.clone(),
@@ -2755,7 +2754,7 @@ where
     /// frame is owed, and it errs wide on purpose: anywhere feedback could
     /// appear counts, plus the move that leaves such a place, which is the frame
     /// that clears it.
-    fn refresh_hover(&self, ctx: &mut UpdateCtx<'_, '_, '_, Message>) {
+    fn refresh_hover(&self, ctx: &mut UpdateCtx<'_, '_, Message>) {
         if !matches!(ctx.event, Event::Mouse(mouse::Event::CursorMoved { .. })) {
             return;
         }
@@ -2774,7 +2773,7 @@ where
     /// anchor's core, or a stretch of cable a press would take.
     ///
     /// Ordered cheapest first, and a superset of what `draw` lights up.
-    fn hover_zone(&self, tree: &Tree, layout: Layout<'_>, cursor: Point) -> bool {
+    fn hover_zone(&self, tree: &Tree, layout: Layout, cursor: Point) -> bool {
         self.anchor_core_at(tree, cursor.into_euclid()).is_some()
             || self
                 .cable_hit_at(tree, layout, cursor.into_euclid())
@@ -2870,7 +2869,8 @@ fn core_grab_half(geometry: AnchorGeometry, zoom: f32) -> f32 {
 /// with nothing to union is empty, `Nodes`/`Edges` union whatever resolves.
 pub(super) fn resolve_focus_target<I, Message, Theme, Renderer>(
     graph: &NodeGraph<'_, I, Message, Theme, Renderer>,
-    layout: Layout<'_>,
+    layout: Layout,
+    node_trees: &[Tree],
     state: &NodeGraphState,
     target: &FocusTarget<I>,
 ) -> Option<WorldRect>
@@ -2884,7 +2884,7 @@ where
     // works in world coordinates, so every rect folds the origin back out
     // through the camera's single conversion.
     let node_rect = |index: usize| -> Option<WorldRect> {
-        let b = layout.children().nth(index)?.bounds();
+        let b = node_layout(layout, node_trees, index)?.bounds();
         let origin = state.camera.layout_to_world(LayoutPoint::new(b.x, b.y));
         Some(WorldRect::new(origin, WorldSize::new(b.width, b.height)))
     };
@@ -2894,7 +2894,7 @@ where
     let by_node =
         |id: &I::NodeId| -> Option<WorldRect> { graph.node_index(id).and_then(node_rect) };
     let by_anchor =
-        |id: &I::AnchorId| -> Option<WorldRect> { graph.anchor_index(id).and_then(&anchor_rect) };
+        |id: &I::AnchorId| -> Option<WorldRect> { graph.anchor_index(id).and_then(anchor_rect) };
     // An edge's frame target is the union of its two endpoint nodes' bounds and
     // every anchor it wraps (seeing a connection means seeing where it runs);
     // either endpoint failing to resolve skips the whole edge.
@@ -2952,7 +2952,7 @@ where
 fn compute_valid_targets<I, Message, Theme, Renderer>(
     graph: &NodeGraph<'_, I, Message, Theme, Renderer>,
     tree: &Tree,
-    layout: Layout<'_>,
+    layout: Layout,
     from_node: usize,
     from_pin: usize,
     excluded_edge: Option<(&PinRef<I>, &PinRef<I>)>,
@@ -2966,7 +2966,7 @@ where
 
     // Get the source pin state for validation.
     let from_pin_state = tree.children.get(from_node).and_then(|node_tree| {
-        layout.children().nth(from_node).and_then(|node_layout| {
+        node_layout(layout, &tree.children, from_node).and_then(|node_layout| {
             find_pins::<I>(node_tree, node_layout)
                 .into_iter()
                 .nth(from_pin)
@@ -2998,8 +2998,7 @@ where
         |node_id: &I::NodeId, pin_id: &I::PinId| occupied.contains(&(node_id, pin_id));
 
     // Iterate all pins in all nodes
-    for (node_index, (node_layout, node_tree)) in layout.children().zip(&tree.children).enumerate()
-    {
+    for (node_index, (node_layout, node_tree)) in layout.iter(&tree.children).enumerate() {
         for (pin_index, pin_state, _) in find_pins::<I>(node_tree, node_layout) {
             // Skip source pin
             if node_index == from_node && pin_index == from_pin {
@@ -3061,7 +3060,7 @@ where
 fn refused_drop<I, Message, Theme, Renderer>(
     graph: &NodeGraph<'_, I, Message, Theme, Renderer>,
     tree: &Tree,
-    layout: Layout<'_>,
+    layout: Layout,
     from: (usize, usize),
     valid: &std::collections::HashSet<(usize, usize)>,
     cursor: Point,
@@ -3073,8 +3072,7 @@ where
     Renderer: iced_wgpu::core::renderer::Renderer + iced_wgpu::primitive::Renderer,
 {
     let mut nearest: Option<(f32, usize, I::PinId)> = None;
-    for (node_index, (node_layout, node_tree)) in layout.children().zip(&tree.children).enumerate()
-    {
+    for (node_index, (node_layout, node_tree)) in layout.iter(&tree.children).enumerate() {
         for (pin_index, pin_state, (a, b)) in find_pins::<I>(node_tree, node_layout) {
             if (node_index, pin_index) == from
                 || pin_state.interactions_disabled
@@ -3095,10 +3093,12 @@ where
         }
     }
     let (_, to_node, to_pin_id) = nearest?;
-    let (_, from_pin_state, _) =
-        find_pins::<I>(tree.children.get(from.0)?, layout.children().nth(from.0)?)
-            .into_iter()
-            .nth(from.1)?;
+    let (_, from_pin_state, _) = find_pins::<I>(
+        tree.children.get(from.0)?,
+        node_layout(layout, &tree.children, from.0)?,
+    )
+    .into_iter()
+    .nth(from.1)?;
     Some((
         PinRef::new(
             graph.node_id_at(from.0)?.clone(),
@@ -3120,12 +3120,12 @@ where
 /// can hold its `tree.state` borrow across the lookup.
 fn pin_by_id<I: Ids>(
     node_trees: &[Tree],
-    layout: Layout<'_>,
+    layout: Layout,
     node_index: usize,
     pin_id: &I::PinId,
 ) -> Option<(usize, (Point, Point), PinSide, PinDirection)> {
     let node_tree = node_trees.get(node_index)?;
-    let node_layout = layout.children().nth(node_index)?;
+    let node_layout = node_layout(layout, node_trees, node_index)?;
     find_pins::<I>(node_tree, node_layout)
         .iter()
         .find(|(_, state, _)| state.pin_id == *pin_id)

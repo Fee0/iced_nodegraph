@@ -25,7 +25,7 @@ use demo_common::{Scene, SceneMessage, page_theme};
 use iced::futures::channel::mpsc;
 use iced::futures::{SinkExt, Stream, StreamExt};
 use iced::window::settings::PlatformSpecific;
-use iced::{Element, Subscription, Task, Theme, window};
+use iced::{Element, Subscription, Task, Theme, Widget, window};
 use wasm_bindgen::prelude::*;
 
 use crate::SCENES;
@@ -302,8 +302,9 @@ impl Gallery {
             Some(live) => live
                 .scene
                 .view()
-                .map(move |message| Message::Scene(id, message)),
-            None => iced::widget::column![].into(),
+                .map(move |message| Message::Scene(id, message))
+                .boxed(),
+            None => iced::widget::void().boxed(),
         }
     }
 

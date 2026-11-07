@@ -7,7 +7,7 @@
 //!
 //! ```no_run
 //! use demo_common::{Demo, Scene, SceneDef, SceneMessage, erase};
-//! use iced::{Element, Task, Theme, widget::text};
+//! use iced::{Element, Task, Theme, Widget, widget::text};
 //!
 //! #[derive(Default)]
 //! struct App;
@@ -29,7 +29,7 @@
 //!     }
 //!
 //!     fn view(&self) -> Element<'_, Message> {
-//!         text("hello").into()
+//!         text("hello").boxed()
 //!     }
 //!
 //!     fn theme(&self) -> Theme {
@@ -52,7 +52,7 @@
 use std::any::Any;
 use std::fmt;
 
-use iced::{Element, Subscription, Task, Theme};
+use iced::{Element, Subscription, Task, Theme, Widget};
 
 /// One demo application: the five methods `iced::application` takes, on a type.
 ///
@@ -161,7 +161,7 @@ impl<A: Demo> Scene for Erased<A> {
     }
 
     fn view(&self) -> Element<'_, SceneMessage> {
-        self.0.view().map(SceneMessage::new::<A::Message>)
+        Widget::map(self.0.view(), SceneMessage::new::<A::Message>).boxed()
     }
 
     fn theme(&self) -> Theme {

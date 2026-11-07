@@ -3,7 +3,7 @@
 //! and the project site's phosphor storage-tube theme.
 
 use iced::Theme;
-use iced::theme::Palette;
+use iced::theme::palette::Seed;
 
 /// Every page theme name [`page_theme`] accepts. The first three are the names
 /// rustdoc puts in `html[data-theme]`; `phosphor` is the project site's.
@@ -19,37 +19,37 @@ pub const PAGE_THEMES: [&str; 4] = ["light", "dark", "ayu", "phosphor"];
 /// storage-tube faceplate: a dark green-grey background with phosphor-green
 /// text and accents.
 pub fn page_theme(name: &str) -> Option<Theme> {
-    let (name, palette) = match name {
+    let (name, seed) = match name {
         "light" => (
             "Rustdoc Light",
-            rustdoc_palette(
+            rustdoc_seed(
                 iced::color!(0xffffff),
                 iced::color!(0x000000),
                 iced::color!(0x3873ad),
-                Palette::LIGHT,
+                Seed::LIGHT,
             ),
         ),
         "dark" => (
             "Rustdoc Dark",
-            rustdoc_palette(
+            rustdoc_seed(
                 iced::color!(0x353535),
                 iced::color!(0xdddddd),
                 iced::color!(0xd2991d),
-                Palette::DARK,
+                Seed::DARK,
             ),
         ),
         "ayu" => (
             "Rustdoc Ayu",
-            rustdoc_palette(
+            rustdoc_seed(
                 iced::color!(0x0f1419),
                 iced::color!(0xc5c5c5),
                 iced::color!(0x39afd7),
-                Palette::DARK,
+                Seed::DARK,
             ),
         ),
         "phosphor" => (
             "Phosphor",
-            Palette {
+            Seed {
                 background: iced::color!(0x0e1712),
                 text: iced::color!(0xa8f5bd),
                 primary: iced::color!(0x5fe38a),
@@ -61,18 +61,18 @@ pub fn page_theme(name: &str) -> Option<Theme> {
         _ => return None,
     };
 
-    Some(Theme::custom(name.to_owned(), palette))
+    Some(Theme::custom(name, seed))
 }
 
-/// A rustdoc page theme's palette: its own background, text and primary, the
+/// A rustdoc page theme's seed colours: its own background, text and primary, the
 /// warning all three rustdoc themes share, and `base` for the rest.
-fn rustdoc_palette(
+fn rustdoc_seed(
     background: iced::Color,
     text: iced::Color,
     primary: iced::Color,
-    base: Palette,
-) -> Palette {
-    Palette {
+    base: Seed,
+) -> Seed {
+    Seed {
         background,
         text,
         primary,

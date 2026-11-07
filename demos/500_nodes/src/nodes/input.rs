@@ -1,5 +1,5 @@
 use iced::{
-    Theme,
+    Theme, Widget,
     widget::{column, container, text},
 };
 use iced_nodegraph::pin;
@@ -22,7 +22,7 @@ where
 
     column![title_bar("Time", theme), container(pins).padding([4, 0])]
         .width(100.0)
-        .into()
+        .boxed()
 }
 
 pub fn uv_input_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -40,7 +40,7 @@ where
 
     column![title_bar("UV", theme), container(pins).padding([4, 0])]
         .width(100.0)
-        .into()
+        .boxed()
 }
 
 pub fn normal_input_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -58,7 +58,7 @@ where
 
     column![title_bar("Normal", theme), container(pins).padding([4, 0])]
         .width(100.0)
-        .into()
+        .boxed()
 }
 
 pub fn position_input_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -79,5 +79,5 @@ where
         container(pins).padding([4, 0])
     ]
     .width(100.0)
-    .into()
+    .boxed()
 }

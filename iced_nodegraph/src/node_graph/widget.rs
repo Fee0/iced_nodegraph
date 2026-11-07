@@ -46,8 +46,8 @@
 //!   beneath it.
 
 use iced_wgpu::core::{
-    Clipboard, Layout, Shell, layout, mouse, overlay, renderer,
-    widget::{self, Tree, tree},
+    Layout, Shell, Widget, layout, mouse, overlay, renderer,
+    widget::{self, Meta, Tree, tree},
 };
 use iced_widget::core::{Element, Event, Length, Point, Rectangle, Size, Vector, keyboard};
 use web_time::Instant;
@@ -80,6 +80,13 @@ pub(crate) mod update;
 
 use camera_overlay::CameraOverlay;
 
+impl<I, Message, Theme, Renderer> Meta for NodeGraph<'_, I, Message, Theme, Renderer>
+where
+    I: Ids,
+    Theme: Catalog,
+{
+}
+
 impl<I, Message, Theme, Renderer> iced_wgpu::core::Widget<Message, Theme, Renderer>
     for NodeGraph<'_, I, Message, Theme, Renderer>
 where
@@ -99,37 +106,38 @@ where
         self.size
     }
 
-    fn layout(
-        &mut self,
-        tree: &mut Tree,
-        renderer: &Renderer,
-        limits: &layout::Limits,
-    ) -> layout::Node {
-        let limits = limits.width(self.size.width).height(self.size.height);
-        let size = limits.resolve(self.size.width, self.size.height, Size::ZERO);
-        // Loose limits so a node shrinks to fit its content: a `Length::Fill`
-        // child has nothing to fill and resolves to an infinite size instead
-        // of the whole graph. Such a body has no drawable rectangle, so debug
-        // builds name the node here rather than fail three crates down in the
-        // SDF boolean over NaN geometry.
-        let node_limits = layout::Limits::new(Size::ZERO, Size::INFINITE);
-        let nodes = self
-            .elements_iter_mut()
-            .zip(&mut tree.children)
-            .enumerate()
-            .map(|(node_index, ((position, element), node_tree))| {
-                let node = element
-                    .as_widget_mut()
-                    .layout(node_tree, renderer, &node_limits);
-                debug_assert!(
-                    node.size().width.is_finite() && node.size().height.is_finite(),
-                    "node {node_index} body resolved to an infinite size {:?}: a `Length::Fill` inside a node body has nothing to fill; give the element a fixed size",
-                    node.size(),
-                );
-                node.move_to(position)
-            })
-            .collect();
-        layout::Node::with_children(size, nodes)
+    fn layout(&mut self, tree: &mut Tree, renderer: &Renderer, limits: &layout::Limits) {
+        let size = layout::atomic(limits, self.size.width, self.size.height);
+        // Unbounded limits so a node shrinks to fit its content rather than
+        // filling the graph. Both axes are flagged infinite, not merely given
+        // an infinite `max`: on an infinite axis `Length::Fill` resolves to the
+        // intrinsic size, so a `Fill` child (a `node_header`, say) stretches to
+        // its widest sibling. With a plain infinite `max` it would resolve to
+        // infinity, since iced's containers default to the non-compressing
+        // `Length::Fit`.
+        //
+        // A widget that still sizes itself to the unbounded limits leaves the
+        // body with no drawable rectangle, so debug builds name the node here
+        // rather than fail three crates down in the SDF boolean over NaN
+        // geometry.
+        let node_limits = layout::Limits::with_flags(
+            Size::ZERO,
+            Size::ZERO,
+            Size::new(false, false),
+            Size::new(true, true),
+        );
+        for (node_index, ((position, element), node_tree)) in
+            self.elements_iter_mut().zip(&mut tree.children).enumerate()
+        {
+            element.layout(node_tree, renderer, &node_limits);
+            debug_assert!(
+                node_tree.size.width.is_finite() && node_tree.size.height.is_finite(),
+                "node {node_index} body resolved to a non-finite size {:?}: a widget inside the node body sized itself to the unbounded node limits; give it a fixed size",
+                node_tree.size,
+            );
+            node_tree.translation = Vector::new(position.x, position.y);
+        }
+        tree.size = size;
     }
 
     fn draw(
@@ -138,33 +146,24 @@ where
         renderer: &mut Renderer,
         theme: &Theme,
         style: &renderer::Style,
-        layout: layout::Layout<'_>,
+        layout: layout::Layout,
         cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
         self.draw_impl(tree, renderer, theme, style, layout, cursor, viewport);
     }
 
-    fn size_hint(&self) -> Size<Length> {
-        self.size()
-    }
-
-    fn children(&self) -> Vec<Tree> {
-        self.elements_iter()
-            .map(|(_, element)| Tree::new(element))
-            .collect()
-    }
-
-    fn diff(&self, tree: &mut Tree) {
-        let children: Vec<&Element<'_, Message, Theme, Renderer>> =
-            self.elements_iter().map(|(_, e)| e).collect();
-        tree.diff_children(&children);
+    fn diff(&mut self, tree: &mut Tree) {
+        let mut children: Vec<&mut Element<'_, Message, Theme, Renderer>> =
+            self.elements_iter_mut().map(|(_, e)| e).collect();
+        tree.diff_children(&mut children);
     }
 
     fn operate(
         &mut self,
         tree: &mut Tree,
-        layout: Layout<'_>,
+        layout: Layout,
+        viewport: &Rectangle,
         renderer: &Renderer,
         operation: &mut dyn widget::Operation,
     ) {
@@ -177,31 +176,53 @@ where
         if let Some(request) = slot {
             let state = tree.state.downcast_mut::<NodeGraphState>();
             state.pending_focus =
-                update::resolve_focus_target(self, layout, state, &request.target)
+                update::resolve_focus_target(self, layout, &tree.children, state, &request.target)
                     .map(|world_aabb| (world_aabb, request.options));
         }
 
-        operation.traverse(&mut |operation| {
-            for (((_, element), node_tree), node_layout) in self
-                .elements_iter_mut()
-                .zip(&mut tree.children)
-                .zip(layout.children())
-            {
-                element
-                    .as_widget_mut()
-                    .operate(node_tree, node_layout, renderer, operation);
-            }
-        });
+        // The node content lives in layout-absolute space, so the viewport it
+        // is handed is the camera-inverted one, clipped to the graph first as
+        // `draw` clips it - the same space the `update` walk uses.
+        let camera = tree
+            .state
+            .downcast_ref::<NodeGraphState>()
+            .camera_for(layout);
+        let clipped_viewport = layout
+            .bounds()
+            .intersection(viewport)
+            .unwrap_or(Rectangle::new(layout.bounds().position(), Size::ZERO));
+        operation.container(self.id.as_ref(), layout.bounds(), &clipped_viewport);
+        camera.update_with(
+            &clipped_viewport,
+            mouse::Cursor::Unavailable,
+            |child_viewport, _| {
+                operation.traverse(&mut |operation| {
+                    for ((_, element), (node_layout, node_tree)) in self
+                        .elements_iter_mut()
+                        .zip(layout.iter_mut(&mut tree.children))
+                    {
+                        element.operate(
+                            node_tree,
+                            node_layout,
+                            child_viewport,
+                            renderer,
+                            operation,
+                        );
+                    }
+                });
+            },
+        );
     }
 
     fn overlay<'b>(
         &'b mut self,
         tree: &'b mut Tree,
-        layout: Layout<'b>,
+        layout: Layout,
         renderer: &Renderer,
         viewport: &Rectangle,
         translation: Vector,
-    ) -> Option<overlay::Element<'b, Message, Theme, Renderer>> {
+        window: Size,
+    ) -> Vec<overlay::Element<'b, Message, Theme, Renderer>> {
         // Iced collects pop-out widgets (combo box menus, tooltips, vanilla
         // `menu`) only through `Widget::overlay`. Without forwarding it to the
         // node elements, their underlying widgets draw fine but the pop-out
@@ -209,53 +230,47 @@ where
         let state = tree.state.downcast_ref::<NodeGraphState>();
         let camera = state.camera_for(layout);
 
-        // Collect each node's overlay (most yield None). Child layouts are in
+        // Collect each node's overlays (most have none). Child layouts are in
         // the widget's layout-absolute space; the translation carries their
-        // anchors into zoomed-screen space, where `CameraOverlay` lays them
-        // out and scales them (see its docs for why that space). A parent
-        // that itself translates (a scrollable, an enclosing graph) passes
-        // that offset in; it composes here.
+        // anchors into zoomed-screen space, where each pop-out lays itself out
+        // against the window divided by zoom and `CameraOverlay` scales it
+        // (see its docs for why that space). A parent that itself translates
+        // (a scrollable, an enclosing graph) passes that offset in; it
+        // composes here.
         //
         // The incoming translation is in the parent's zoomed-screen space; the
         // content is laid out in this widget's layout space and scaled by
         // `zoom` in `CameraOverlay`, so the parent offset enters divided by zoom.
-        let translation = camera.overlay_translation() + translation * (1.0 / camera.zoom());
+        let zoom = camera.zoom();
+        let translation = camera.overlay_translation() + translation * (1.0 / zoom);
+        let room = Size::new(window.width / zoom, window.height / zoom);
         let children: Vec<overlay::Element<'b, Message, Theme, Renderer>> = self
             .nodes
             .iter_mut()
             .map(|node| &mut node.element)
-            .zip(&mut tree.children)
-            .zip(layout.children())
-            .filter_map(|((element, node_tree), node_layout)| {
-                element.as_widget_mut().overlay(
+            .zip(layout.iter_mut(&mut tree.children))
+            .flat_map(|(element, (node_layout, node_tree))| {
+                element.overlay(
                     node_tree,
                     node_layout,
                     renderer,
                     viewport,
                     translation,
+                    room,
                 )
             })
             .collect();
 
-        if children.is_empty() {
-            return None;
-        }
-
-        let content = overlay::Group::with_children(children).overlay();
-        Some(overlay::Element::new(Box::new(CameraOverlay {
-            content,
-            zoom: camera.zoom(),
-        })))
+        CameraOverlay::wrap(children, zoom)
     }
 
     fn update(
         &mut self,
         tree: &mut Tree,
         event: &Event,
-        layout: Layout<'_>,
+        layout: Layout,
         screen_cursor: mouse::Cursor,
         renderer: &Renderer,
-        clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
@@ -265,7 +280,6 @@ where
             layout,
             screen_cursor,
             renderer,
-            clipboard,
             shell,
             viewport,
         );
@@ -283,7 +297,7 @@ where
     fn mouse_interaction(
         &self,
         tree: &Tree,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         viewport: &Rectangle,
         renderer: &Renderer,
@@ -354,7 +368,7 @@ where
                     let Some(child_tree) = tree.children.get(node_index) else {
                         continue;
                     };
-                    let Some(node_layout) = layout.children().nth(node_index) else {
+                    let Some(node_layout) = node_layout(layout, &tree.children, node_index) else {
                         continue;
                     };
                     if !node_layout.bounds().contains(position) {
@@ -368,7 +382,7 @@ where
                     {
                         return mouse::Interaction::ResizingDiagonallyDown;
                     }
-                    return node.element.as_widget().mouse_interaction(
+                    return node.element.mouse_interaction(
                         child_tree,
                         node_layout,
                         layout_cursor,
@@ -389,17 +403,25 @@ where
     }
 }
 
-impl<'a, I, Message, Theme, Renderer> From<NodeGraph<'a, I, Message, Theme, Renderer>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    I: Ids,
-    Theme: Catalog + 'a,
-    Renderer: iced_wgpu::core::renderer::Renderer + 'a + iced_wgpu::primitive::Renderer,
-    Message: 'static,
-{
-    fn from(graph: NodeGraph<'a, I, Message, Theme, Renderer>) -> Self {
-        Element::new(graph)
-    }
+/// The layout of node `node_index`: the graph's layout moved by the node
+/// tree's translation, which `layout` set to the node's world position.
+pub(super) fn node_layout(
+    layout: Layout,
+    node_trees: &[Tree],
+    node_index: usize,
+) -> Option<Layout> {
+    layout
+        .iter(node_trees)
+        .nth(node_index)
+        .map(|(node_layout, _)| node_layout)
+}
+
+/// Every node's layout, in push order. See [`node_layout`].
+pub(super) fn node_layouts(
+    layout: Layout,
+    node_trees: &[Tree],
+) -> impl DoubleEndedIterator<Item = Layout> + ExactSizeIterator + '_ {
+    layout.iter(node_trees).map(|(node_layout, _)| node_layout)
 }
 
 /// A pin as found in the laid-out widget tree: its positional index within the
@@ -421,7 +443,7 @@ pub(super) type PinLayout<'a, I> = (
 /// pin's own `NodePinState<PinId, Payload>`. A pin over other types is a
 /// debug-build assertion and is skipped in release builds, where it would
 /// otherwise be indistinguishable from a node without pins.
-fn find_pins<'a, I: Ids>(tree: &'a Tree, layout: Layout<'a>) -> Vec<PinLayout<'a, I>> {
+fn find_pins<'a, I: Ids>(tree: &'a Tree, layout: Layout) -> Vec<PinLayout<'a, I>> {
     let mut flat = Vec::new();
     let mut pin_index = 0;
     inner_find_pins::<I>(&mut flat, &mut pin_index, layout, tree);
@@ -431,7 +453,7 @@ fn find_pins<'a, I: Ids>(tree: &'a Tree, layout: Layout<'a>) -> Vec<PinLayout<'a
 fn inner_find_pins<'a, I: Ids>(
     flat: &mut Vec<PinLayout<'a, I>>,
     pin_index: &mut usize,
-    node_layout: Layout<'a>,
+    node_layout: Layout,
     pin_tree: &'a Tree,
 ) {
     // A nested graph's pins belong to that graph. Stop at its tree so the
@@ -440,7 +462,18 @@ fn inner_find_pins<'a, I: Ids>(
         return;
     }
 
-    if pin_tree.tag == tree::Tag::of::<PinSlot>() {
+    // iced's single-child wrappers (`container`, `pin`, `float`, `themer`)
+    // report their content's tag and a fresh copy of its state as their own,
+    // and keep the content as their child. A pin wrapped that way leaves a
+    // `PinSlot` tree above the real one whose state is never updated; it is a
+    // forwarder, not a pin, and counting it would draw a ghost pin at the
+    // node's origin and shift every later pin index.
+    let forwards_a_pin = pin_tree
+        .children
+        .first()
+        .is_some_and(|child| child.tag == tree::Tag::of::<PinSlot>());
+
+    if pin_tree.tag == tree::Tag::of::<PinSlot>() && !forwards_a_pin {
         let slot = pin_tree.state.downcast_ref::<PinSlot>();
         match slot.get::<I::PinId, I::Payload>() {
             Some(pin_state) => {
@@ -517,6 +550,40 @@ fn resize_grip_zone(bounds: Rectangle, zoom: f32) -> Rectangle {
         y: bounds.y + bounds.height - side,
         width: side,
         height: side,
+    }
+}
+
+#[cfg(test)]
+mod find_pins_tests {
+    use super::find_pins;
+    use crate::{Indexed, PinSide, node_pin};
+    use iced::widget::{column, container, text};
+    use iced_wgpu::core::{Layout, Size, Widget, widget::Tree};
+
+    fn pins_in(mut content: impl Widget<(), iced::Theme, iced::Renderer>) -> usize {
+        let mut tree = Tree::empty();
+        tree.diff(&mut content);
+        find_pins::<Indexed>(&tree, Layout::new(Size::ZERO)).len()
+    }
+
+    // A container reports its content's tag and state as its own: the copy it
+    // holds is not a second pin.
+    #[test]
+    fn a_wrapped_pin_is_found_once() {
+        let pin = || node_pin(PinSide::Left, 0usize, text("a"));
+        assert_eq!(pins_in(container(pin())), 1);
+        assert_eq!(pins_in(container(container(pin()))), 1);
+    }
+
+    #[test]
+    fn sibling_pins_are_each_found() {
+        assert_eq!(
+            pins_in(column![
+                container(node_pin(PinSide::Left, 0usize, text("a"))),
+                node_pin(PinSide::Right, 1usize, text("b")),
+            ]),
+            2,
+        );
     }
 }
 

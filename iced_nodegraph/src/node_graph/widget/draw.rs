@@ -267,7 +267,7 @@ where
         renderer: &mut Renderer,
         theme: &Theme,
         style: &renderer::Style,
-        layout: layout::Layout<'_>,
+        layout: layout::Layout,
         cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
@@ -339,8 +339,7 @@ where
         // edge loop, foreground and info passes all need pin positions.
         // Indexed by node index; padded so lookups never go out of bounds.
         let mut node_pins: Vec<Vec<PinLayout<'_, I>>> = layout
-            .children()
-            .zip(&tree.children)
+            .iter(&tree.children)
             .map(|(node_layout, node_tree)| find_pins::<I>(node_tree, node_layout))
             .collect();
         node_pins.resize_with(self.nodes.len(), Vec::new);
@@ -449,7 +448,7 @@ where
         let node_geoms: Vec<Option<NodeGeom>> = (0..self.nodes.len())
             .map(|node_index| {
                 let node = &self.nodes[node_index];
-                let node_layout = layout.children().nth(node_index)?;
+                let node_layout = node_layout(layout, &tree.children, node_index)?;
                 // Gate only: a node without a tree child gets no geometry
                 // (its pins are already absent from `node_pins`).
                 let _node_tree = tree.children.get(node_index)?;
@@ -1108,7 +1107,7 @@ where
             let Some(node_tree) = tree.children.get(node_index) else {
                 continue;
             };
-            let Some(node_layout) = layout.children().nth(node_index) else {
+            let Some(node_layout) = node_layout(layout, &tree.children, node_index) else {
                 continue;
             };
             let Some(geom) = node_geoms[node_index].as_ref() else {
@@ -1216,7 +1215,7 @@ where
 
                         renderer.with_layer(clip_bounds, |renderer| {
                             renderer.with_translation(screen_offset, |renderer| {
-                                node.element.as_widget().draw(
+                                node.element.draw(
                                     node_tree,
                                     renderer,
                                     theme,
@@ -1690,7 +1689,7 @@ mod tests {
     use super::*;
 
     use iced_wgpu::core::widget::Widget;
-    use iced_widget::core::{Background, Color, Element, Theme, Transformation, image};
+    use iced_widget::core::{Background, Color, Theme, Transformation, image};
 
     use crate::style::EdgeStyle;
     use crate::{Indexed, PinDirection, PinRef, PinSide, default_edge_style, edge, node, node_pin};
@@ -1708,10 +1707,17 @@ mod tests {
         fn fill_quad(&mut self, _quad: renderer::Quad, _background: impl Into<Background>) {}
         fn reset(&mut self, _new_bounds: Rectangle) {}
         fn allocate_image(
-            &mut self,
+            &self,
             _handle: &image::Handle,
             _callback: impl FnOnce(Result<image::Allocation, image::Error>) + Send + 'static,
         ) {
+        }
+        fn hint(&mut self, _scale: renderer::Scale) {}
+        fn scale(&self) -> Option<renderer::Scale> {
+            None
+        }
+        fn settings(&self) -> renderer::Settings {
+            renderer::Settings::default()
         }
     }
 
@@ -1722,18 +1728,15 @@ mod tests {
     /// A pin needs an element to wrap; nothing here depends on which.
     struct Blank;
 
+    impl Meta for Blank {}
+
     impl<Message> Widget<Message, Theme, NullRenderer> for Blank {
         fn size(&self) -> Size<Length> {
             Size::new(Length::Fixed(8.0), Length::Fixed(8.0))
         }
 
-        fn layout(
-            &mut self,
-            _tree: &mut Tree,
-            _renderer: &NullRenderer,
-            limits: &layout::Limits,
-        ) -> layout::Node {
-            layout::Node::new(limits.resolve(Length::Fixed(8.0), Length::Fixed(8.0), Size::ZERO))
+        fn layout(&mut self, tree: &mut Tree, _renderer: &NullRenderer, limits: &layout::Limits) {
+            tree.size = layout::atomic(limits, Length::Fixed(8.0), Length::Fixed(8.0));
         }
 
         fn draw(
@@ -1742,16 +1745,10 @@ mod tests {
             _renderer: &mut NullRenderer,
             _theme: &Theme,
             _style: &renderer::Style,
-            _layout: layout::Layout<'_>,
+            _layout: layout::Layout,
             _cursor: mouse::Cursor,
             _viewport: &Rectangle,
         ) {
-        }
-    }
-
-    impl<'a, Message: 'a> From<Blank> for Element<'a, Message, Theme, NullRenderer> {
-        fn from(blank: Blank) -> Self {
-            Element::new(blank)
         }
     }
 
@@ -1810,10 +1807,10 @@ mod tests {
                 EdgeCurve::BezierCubic,
             ));
 
-        let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, NullRenderer>);
+        let mut tree = Tree::empty();
+        Tree::diff::<(), Theme, NullRenderer>(&mut tree, &mut graph);
         let mut renderer = NullRenderer;
-        let layout_node =
-            graph.layout(&mut tree, &renderer, &layout::Limits::new(Size::ZERO, SIZE));
+        graph.layout(&mut tree, &renderer, &layout::Limits::new(Size::ZERO, SIZE));
         graph.draw(
             &tree,
             &mut renderer,
@@ -1821,7 +1818,7 @@ mod tests {
             &renderer::Style {
                 text_color: Color::BLACK,
             },
-            layout::Layout::new(&layout_node),
+            layout::Layout::new(tree.size),
             mouse::Cursor::Unavailable,
             &Rectangle::new(Point::ORIGIN, SIZE),
         );

@@ -161,12 +161,15 @@ pub struct Node<
 pub fn node<'a, I: Ids, Message, Theme: Catalog, Renderer>(
     id: I::NodeId,
     position: Point,
-    element: impl Into<Element<'a, Message, Theme, Renderer>>,
-) -> Node<'a, I, Message, Theme, Renderer> {
+    element: impl iced_wgpu::core::Widget<Message, Theme, Renderer> + 'a,
+) -> Node<'a, I, Message, Theme, Renderer>
+where
+    Renderer: iced_wgpu::core::Renderer,
+{
     Node {
         id,
         position,
-        element: element.into(),
+        element: element._boxed(),
         selected: false,
         resizable: false,
         frame: false,
@@ -659,7 +662,7 @@ impl Default for Minimap {
 /// `I` cannot be inferred from the ids pushed into the graph (an associated
 /// type does not identify its trait impl), so a graph over custom ids names
 /// it once: `NodeGraph::<AppIds, _, _, _>::new()`. `Message`, `Theme` and
-/// `Renderer` infer from the callbacks and the `Element` the graph becomes.
+/// `Renderer` infer from the callbacks and from where the graph is placed.
 #[allow(missing_debug_implementations)]
 pub struct NodeGraph<
     'a,
@@ -1524,12 +1527,6 @@ impl<'a, I: Ids, Message, Theme: Catalog, Renderer> NodeGraph<'a, I, Message, Th
 
     /// The nodes' world positions paired with their content elements, in push
     /// order. Keeps the `Widget` impl's tree walks independent of `Node`'s shape.
-    pub(super) fn elements_iter(
-        &self,
-    ) -> impl Iterator<Item = (Point, &Element<'a, Message, Theme, Renderer>)> {
-        self.nodes.iter().map(|node| (node.position, &node.element))
-    }
-
     pub(super) fn elements_iter_mut(
         &mut self,
     ) -> impl Iterator<Item = (Point, &mut Element<'a, Message, Theme, Renderer>)> {

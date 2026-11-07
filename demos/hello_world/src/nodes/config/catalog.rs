@@ -4,6 +4,7 @@
 //! class and status. A config arriving on an input becomes that class's overlay
 //! for the frame; the row shows "ok" while it is connected.
 
+use iced::Widget;
 use std::any::TypeId;
 use std::collections::HashSet;
 
@@ -55,7 +56,7 @@ where
             pin!(Left, label, text(label).size(10), Input, input_type(label)),
             value_display(status),
         )
-        .into()
+        .boxed()
     });
 
     let content = column(rows).spacing(4);
@@ -65,5 +66,5 @@ where
         container(content).padding([8, 10])
     ]
     .width(180.0)
-    .into()
+    .boxed()
 }

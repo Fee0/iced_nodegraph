@@ -1,9 +1,8 @@
 # Demo: hello_world
 
 An interactive node graph application built on `iced_nodegraph`. Despite the
-name, this is the most feature-complete demo: it combines a command palette,
-theme switching, a live style-configuration node system, selection and grouping,
-and persistent state.
+name, this is the most feature-complete demo: it combines a live
+style-configuration node system, selection and grouping, and persistent state.
 
 <figure class="demo-embed" data-scene="hello_world">
   <div class="demo-frame">
@@ -21,9 +20,9 @@ targets.
 
 ## Features
 
-- Command palette (Cmd/Ctrl+Space) for adding nodes and switching themes,
-  with fuzzy filtering, keyboard navigation, and nested submenus.
-- Multiple node families:
+- Multiple node families. There is no UI for adding nodes: the graph holds
+  the boot scene's nodes, their clones, and whatever a restored session
+  contains.
   - Workflow nodes: email trigger, email parser, filter, calendar.
   - Input nodes: float slider, integer slider, boolean toggle, RGB color
     picker, color presets, and enum selectors for edge curve, pin shape, edge
@@ -51,8 +50,6 @@ targets.
 - Routing anchors: drag a cable mid-run to create an anchor, drag a cable
   onto an anchor's orbit to attach it, and a minimap in the bottom-right
   corner.
-- Theme switching across 22 built-in Iced themes, with live preview while the
-  theme submenu is open.
 - Selection, clone, delete, and group-move for nodes, with a selection box and an
   edge cutting tool.
 - Pan and zoom with cursor-anchored zoom.
@@ -62,13 +59,8 @@ targets.
 
 ## Controls
 
-- Cmd/Ctrl+Space - Open or close the command palette.
-- Cmd/Ctrl+N - Jump straight to the Add Node submenu.
-- Cmd/Ctrl+T - Jump straight to the Change Theme submenu.
-- Cmd/Ctrl+E - Export the current graph state to a file (native only).
-- Arrow Up / Arrow Down - Navigate palette entries.
-- Enter - Confirm the selected palette entry.
-- Escape - Cancel the palette (reverts any theme preview).
+- Tab / Shift+Tab - Move keyboard focus between text fields, such as a
+  slider node's min/max/step fields.
 - Drag a node - Move it; group selections move together.
 - Drag from a pin - Create a connection to a compatible pin.
 - Ctrl/Cmd+click an edge, or Ctrl/Cmd+drag across edges - Cut connections.
@@ -86,8 +78,8 @@ The boot scene ships a complete rig: one frame per Catalog class and status,
 each holding a source for every field of its config node, all wired into one
 Catalog node, and a Node Class frame that tints the calendar node. Move any
 slider in a frame and the corresponding class updates live; the palette pins
-re-color when the theme changes. Add your own input nodes and config nodes
-through the palette to extend it.
+re-color when the theme changes. Rewire the existing nodes, or clone them, to
+extend it.
 
 ## Running
 
@@ -98,7 +90,7 @@ cargo run -p demo_hello_world
 ## Notes
 
 - Persistence is native only. On WASM the graph lives in memory for the
-  session, and state export is disabled.
+  session.
 - Saved state is written to the OS data directory, for example
   `%APPDATA%\iced_nodegraph\demo\state.json` on Windows.
 - Node and edge identifiers use NanoID strings; pins are identified by stable

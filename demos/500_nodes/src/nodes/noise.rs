@@ -1,5 +1,5 @@
 use iced::{
-    Length, Theme,
+    Length, Theme, Widget,
     alignment::Horizontal,
     widget::{column, container, row, text},
 };
@@ -36,7 +36,7 @@ where
 
     column![title_bar("Perlin", theme), container(pins).padding([4, 0])]
         .width(130.0)
-        .into()
+        .boxed()
 }
 
 pub fn voronoi_noise_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -67,7 +67,7 @@ where
 
     column![title_bar("Voronoi", theme), container(pins).padding([4, 0])]
         .width(130.0)
-        .into()
+        .boxed()
 }
 
 pub fn simplex_noise_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -98,5 +98,5 @@ where
 
     column![title_bar("Simplex", theme), container(pins).padding([4, 0])]
         .width(130.0)
-        .into()
+        .boxed()
 }

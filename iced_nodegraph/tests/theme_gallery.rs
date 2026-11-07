@@ -10,15 +10,15 @@
 
 mod common;
 
-use iced::advanced::widget::{Tree, Widget};
-use iced::advanced::{Layout, layout, mouse, renderer};
-use iced::widget::{Column, Row, Space, column, container, text};
-use iced::{Color, Element, Length, Point, Rectangle, Size, Theme};
+use iced::advanced::renderer::Scale;
+use iced::advanced::widget::Widget as _;
+use iced::advanced::{layout, mouse, renderer, shell};
+use iced::widget::{Column, Space, column, container, row, text};
+use iced::{Color, Length, Point, Rectangle, Size, Theme};
 use iced_wgpu::Renderer;
-use iced_wgpu::core::clipboard;
 use iced_wgpu::graphics::Viewport;
 
-use common::shared;
+use common::{headless_shell, mount, shared};
 use iced_nodegraph::{NodeGraph, PinDirection, PinRef, PinSide, edge, node, node_pin};
 
 /// One gallery cell, in physical pixels.
@@ -30,41 +30,27 @@ fn node_body(
     title: String,
     inputs: &'static [&'static str],
     outputs: &'static [&'static str],
-) -> Element<'static, (), Theme, Renderer> {
-    let ins: Vec<Element<'static, (), Theme, Renderer>> = inputs
-        .iter()
-        .enumerate()
-        .map(|(i, label)| {
-            Element::from(
-                node_pin(PinSide::Left, i, text(*label).size(11)).direction(PinDirection::Input),
-            )
-        })
-        .collect();
-    let outs: Vec<Element<'static, (), Theme, Renderer>> = outputs
-        .iter()
-        .enumerate()
-        .map(|(i, label)| {
-            Element::from(
-                node_pin(PinSide::Right, 10 + i, text(*label).size(11))
-                    .direction(PinDirection::Output),
-            )
-        })
-        .collect();
+) -> impl iced::Widget<(), Theme, Renderer> {
+    let ins = Column::with_children(inputs.iter().enumerate().map(|(i, label)| {
+        node_pin(PinSide::Left, i, text(*label).size(11)).direction(PinDirection::Input)
+    }));
+    let outs = Column::with_children(outputs.iter().enumerate().map(|(i, label)| {
+        node_pin(PinSide::Right, 10 + i, text(*label).size(11)).direction(PinDirection::Output)
+    }));
 
     container(
         column![
             text(title).size(14),
-            Row::with_children(vec![
-                Element::from(Column::with_children(ins).spacing(6)),
-                Element::from(Space::new().width(Length::Fill)),
-                Element::from(Column::with_children(outs).spacing(6)),
-            ]),
+            row![
+                ins.spacing(6),
+                Space::new().width(Length::Fill),
+                outs.spacing(6),
+            ],
         ]
         .spacing(10),
     )
     .padding(10)
     .width(Length::Fixed(150.0))
-    .into()
 }
 
 /// Renders the gallery scene under `theme`, or `None` without a GPU adapter.
@@ -100,18 +86,15 @@ fn render_theme(theme: &Theme) -> Option<Vec<[u8; 4]>> {
     graph = graph.push_edge(edge((), PinRef::new(0, 10_usize), PinRef::new(1, 0_usize)));
     graph = graph.push_edge(edge((), PinRef::new(1, 10_usize), PinRef::new(2, 0_usize)));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Renderer>);
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &*renderer,
         &layout::Limits::new(Size::ZERO, Size::new(CW as f32, CH as f32)),
     );
-    let layout = Layout::new(&layout_node);
     let viewport_rect = Rectangle::new(Point::ORIGIN, Size::new(CW as f32, CH as f32));
 
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     graph.update(
         &mut tree,
         &iced::Event::Mouse(mouse::Event::CursorMoved {
@@ -120,7 +103,6 @@ fn render_theme(theme: &Theme) -> Option<Vec<[u8; 4]>> {
         layout,
         mouse::Cursor::Unavailable,
         &*renderer,
-        &mut clipboard,
         &mut shell,
         &viewport_rect,
     );
@@ -129,7 +111,7 @@ fn render_theme(theme: &Theme) -> Option<Vec<[u8; 4]>> {
         renderer,
         theme,
         &renderer::Style {
-            text_color: theme.palette().text,
+            text_color: theme.seed().text,
         },
         layout,
         mouse::Cursor::Unavailable,
@@ -137,7 +119,7 @@ fn render_theme(theme: &Theme) -> Option<Vec<[u8; 4]>> {
     );
 
     let bytes = renderer.screenshot(
-        &Viewport::with_physical_size(Size::new(CW, CH), 1.0),
+        &Viewport::with_physical_size(Size::new(CW, CH), Scale::default()),
         Color::TRANSPARENT,
     );
     Some(bytes.as_chunks::<4>().0.to_vec())

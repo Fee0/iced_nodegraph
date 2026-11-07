@@ -113,13 +113,15 @@ impl Readback {
             }
             _ => {
                 let f = self.in_flight.take().expect("state checked above");
-                let report = {
-                    let data = f.buffer.slice(..f.used).get_mapped_range();
-                    reduce(&data)
-                };
+                let report = f
+                    .buffer
+                    .slice(..f.used)
+                    .get_mapped_range()
+                    .ok()
+                    .map(|data| reduce(&data));
                 f.buffer.unmap();
                 self.idle = Some(f.buffer);
-                Some(report)
+                report
             }
         }
     }

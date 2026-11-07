@@ -55,8 +55,8 @@
 use std::any::{Any, type_name};
 
 use iced_wgpu::core::{
-    Clipboard, Layout, Shell, Widget, layout, mouse, overlay, renderer,
-    widget::{Tree, tree},
+    Layout, Shell, Widget, layout, mouse, overlay, renderer,
+    widget::{Meta, Tree, tree},
 };
 use iced_widget::core::{Element, Event, Length, Point, Rectangle, Size, Vector};
 
@@ -226,14 +226,14 @@ where
     pub fn new(
         side: PinSide,
         pin_id: P,
-        content: impl Into<Element<'a, Message, Theme, Renderer>>,
+        content: impl Widget<Message, Theme, Renderer> + 'a,
     ) -> Self {
         Self {
             side,
             direction: PinDirection::Both,
             pin_id,
             user_info: (),
-            content: content.into(),
+            content: content._boxed(),
             interactions_disabled: false,
         }
     }
@@ -348,6 +348,13 @@ impl PinSlot {
     }
 }
 
+impl<P, UI, Message, Theme, Renderer> Meta for NodePin<'_, P, UI, Message, Theme, Renderer>
+where
+    P: Id,
+    Renderer: renderer::Renderer,
+{
+}
+
 impl<'a, P, UI, Message, Theme, Renderer> Widget<Message, Theme, Renderer>
     for NodePin<'a, P, UI, Message, Theme, Renderer>
 where
@@ -372,39 +379,26 @@ where
     }
 
     fn size(&self) -> Size<Length> {
-        self.content.as_widget().size()
+        self.content.size()
     }
 
-    fn children(&self) -> Vec<Tree> {
-        vec![Tree::new(&self.content)]
-    }
-
-    fn layout(
-        &mut self,
-        tree: &mut Tree,
-        renderer: &Renderer,
-        limits: &layout::Limits,
-    ) -> layout::Node {
-        if let Some(content_tree) = tree.children.first_mut() {
-            let content_layout =
-                self.content
-                    .as_widget_mut()
-                    .layout(content_tree, renderer, limits);
-            let size = content_layout.size();
-            layout::Node::with_children(size, vec![content_layout])
+    fn layout(&mut self, tree: &mut Tree, renderer: &Renderer, limits: &layout::Limits) {
+        tree.size = if let Some(content_tree) = tree.children.first_mut() {
+            self.content.layout(content_tree, renderer, limits);
+            content_tree.translation = Vector::ZERO;
+            content_tree.size
         } else {
-            layout::Node::new(DEFAULT_PIN_SIZE)
-        }
+            DEFAULT_PIN_SIZE
+        };
     }
 
     fn update(
         &mut self,
         tree: &mut Tree,
         event: &Event,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         renderer: &Renderer,
-        clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
@@ -417,14 +411,13 @@ where
             state.interactions_disabled = self.interactions_disabled;
             state.user_info = self.user_info.clone();
         }
-        if let Some((child_layout, child_tree)) = layout.children().zip(&mut tree.children).next() {
-            self.content.as_widget_mut().update(
+        if let Some((child_layout, child_tree)) = layout.iter_mut(&mut tree.children).next() {
+            self.content.update(
                 child_tree,
                 event,
                 child_layout,
                 cursor,
                 renderer,
-                clipboard,
                 shell,
                 viewport,
             );
@@ -437,12 +430,12 @@ where
         renderer: &mut Renderer,
         theme: &Theme,
         style: &renderer::Style,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
-        if let Some((child_layout, child_tree)) = layout.children().zip(&tree.children).next() {
-            self.content.as_widget().draw(
+        if let Some((child_layout, child_tree)) = layout.iter(&tree.children).next() {
+            self.content.draw(
                 child_tree,
                 renderer,
                 theme,
@@ -457,21 +450,14 @@ where
     fn mouse_interaction(
         &self,
         tree: &Tree,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         viewport: &Rectangle,
         renderer: &Renderer,
     ) -> mouse::Interaction {
-        if let Some((content_tree, content_layout)) =
-            tree.children.first().zip(layout.children().next())
-        {
-            self.content.as_widget().mouse_interaction(
-                content_tree,
-                content_layout,
-                cursor,
-                viewport,
-                renderer,
-            )
+        if let Some((content_layout, content_tree)) = layout.iter(&tree.children).next() {
+            self.content
+                .mouse_interaction(content_tree, content_layout, cursor, viewport, renderer)
         } else {
             mouse::Interaction::default()
         }
@@ -483,27 +469,41 @@ where
     fn overlay<'b>(
         &'b mut self,
         tree: &'b mut Tree,
-        layout: Layout<'b>,
+        layout: Layout,
         renderer: &Renderer,
         viewport: &Rectangle,
         translation: Vector,
-    ) -> Option<overlay::Element<'b, Message, Theme, Renderer>> {
-        let content_tree = tree.children.first_mut()?;
-        let content_layout = layout.children().next()?;
-        self.content.as_widget_mut().overlay(
+        window: Size,
+    ) -> Vec<overlay::Element<'b, Message, Theme, Renderer>> {
+        let Some((content_layout, content_tree)) = layout.iter_mut(&mut tree.children).next()
+        else {
+            return Vec::new();
+        };
+        self.content.overlay(
             content_tree,
             content_layout,
             renderer,
             viewport,
             translation,
+            window,
         )
     }
 
-    fn size_hint(&self) -> Size<Length> {
-        self.content.as_widget().size_hint()
+    fn operate(
+        &mut self,
+        tree: &mut Tree,
+        layout: Layout,
+        viewport: &Rectangle,
+        renderer: &Renderer,
+        operation: &mut dyn iced_wgpu::core::widget::Operation,
+    ) {
+        if let Some((content_layout, content_tree)) = layout.iter_mut(&mut tree.children).next() {
+            self.content
+                .operate(content_tree, content_layout, viewport, renderer, operation);
+        }
     }
 
-    fn diff(&self, tree: &mut Tree) {
+    fn diff(&mut self, tree: &mut Tree) {
         // Reconcile through `Tree::diff_children`, never by calling the content's
         // own `diff` directly: only the former compares widget tags and rebuilds
         // state whose type changed. Diffing the content directly left a stale
@@ -511,21 +511,7 @@ where
         // changed at the same tree position -- which happens as soon as a node is
         // removed from the middle of the graph, since node trees are reconciled by
         // position. The next access downcast that state and panicked.
-        tree.diff_children(std::slice::from_ref(&self.content));
-    }
-}
-
-impl<'a, P, UI, Message, Theme, Renderer> From<NodePin<'a, P, UI, Message, Theme, Renderer>>
-    for Element<'a, Message, Theme, Renderer>
-where
-    P: Id,
-    UI: Clone + 'static,
-    Theme: 'a,
-    Renderer: renderer::Renderer + 'a,
-    Message: 'a,
-{
-    fn from(widget: NodePin<'a, P, UI, Message, Theme, Renderer>) -> Self {
-        Element::new(widget)
+        tree.diff_children(std::slice::from_mut(&mut self.content));
     }
 }
 
@@ -533,7 +519,7 @@ where
 pub fn node_pin<'a, P, Message, Theme, Renderer>(
     side: PinSide,
     pin_id: P,
-    content: impl Into<Element<'a, Message, Theme, Renderer>>,
+    content: impl Widget<Message, Theme, Renderer> + 'a,
 ) -> NodePin<'a, P, (), Message, Theme, Renderer>
 where
     P: Id,
@@ -606,30 +592,34 @@ mod tests {
     /// the next access downcast it to the wrong type and panicked.
     #[test]
     fn content_tree_is_rebuilt_when_the_content_type_changes() {
-        let stateful: Element<'_, (), iced::Theme, iced::Renderer> =
-            node_pin(PinSide::Left, 0usize, text_input("", "x")).into();
-        let mut tree = Tree::new(&stateful);
+        let mut stateful: Element<'_, (), iced::Theme, iced::Renderer> =
+            node_pin(PinSide::Left, 0usize, text_input("", "x"))._boxed();
+        let mut tree = Tree::empty();
+        tree.diff(&mut stateful);
         let stateful_tag = tree.children[0].tag;
 
-        let stateless: Element<'_, (), iced::Theme, iced::Renderer> =
-            node_pin(PinSide::Left, 0usize, text("y")).into();
-        tree.diff(&stateless);
+        let mut stateless: Element<'_, (), iced::Theme, iced::Renderer> =
+            node_pin(PinSide::Left, 0usize, text("y"))._boxed();
+        tree.diff(&mut stateless);
 
+        let mut fresh = Tree::empty();
+        fresh.diff(&mut stateless);
         assert_eq!(tree.children.len(), 1);
         assert_ne!(tree.children[0].tag, stateful_tag);
-        assert_eq!(tree.children[0].tag, Tree::new(&stateless).children[0].tag);
+        assert_eq!(tree.children[0].tag, fresh.children[0].tag);
     }
 
     /// The pin's own state survives a content change: the pin tag is the same,
     /// so only the content subtree is replaced.
     #[test]
     fn the_pin_keeps_its_own_state_across_a_content_change() {
-        let before: Element<'_, (), iced::Theme, iced::Renderer> =
-            node_pin(PinSide::Left, 7usize, text("a")).into();
-        let mut tree = Tree::new(&before);
-        let after: Element<'_, (), iced::Theme, iced::Renderer> =
-            node_pin(PinSide::Left, 7usize, text_input("", "b")).into();
-        tree.diff(&after);
+        let mut before: Element<'_, (), iced::Theme, iced::Renderer> =
+            node_pin(PinSide::Left, 7usize, text("a"))._boxed();
+        let mut tree = Tree::empty();
+        tree.diff(&mut before);
+        let mut after: Element<'_, (), iced::Theme, iced::Renderer> =
+            node_pin(PinSide::Left, 7usize, text_input("", "b"))._boxed();
+        tree.diff(&mut after);
 
         assert_eq!(tree.tag, tree::Tag::of::<PinSlot>());
         let slot = tree.state.downcast_ref::<PinSlot>();
@@ -641,7 +631,7 @@ mod tests {
     #[test]
     fn a_pin_of_another_type_is_told_apart_by_its_slot() {
         let pin: Element<'_, (), iced::Theme, iced::Renderer> =
-            node_pin(PinSide::Left, "named", text("a")).into();
+            node_pin(PinSide::Left, "named", text("a"))._boxed();
         let tree = Tree::new(&pin);
 
         assert_eq!(tree.tag, tree::Tag::of::<PinSlot>());

@@ -392,6 +392,7 @@ impl Camera2D {
         match cursor {
             mouse::Cursor::Available(pos) => mouse::Cursor::Available(map(pos)),
             mouse::Cursor::Levitating(pos) => mouse::Cursor::Levitating(map(pos)),
+            mouse::Cursor::Obstructed(pos) => mouse::Cursor::Obstructed(map(pos)),
             mouse::Cursor::Unavailable => mouse::Cursor::Unavailable,
         }
     }

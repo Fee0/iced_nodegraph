@@ -5,6 +5,7 @@
 //! Supports expandable options for configuring min/max/step.
 
 use demo_common::NodeContentStyle;
+use iced::Widget;
 use iced::{
     Color, Length,
     widget::{button, column, container, row, slider, text, text_input},
@@ -146,7 +147,7 @@ where
             let submit_cfg = config.clone();
             row![
                 text("Min").size(10).color(colors::TEXT_MUTED).width(30),
-                text_input("", &min_display)
+                text_input("", min_display)
                     .on_input(move |s| {
                         let mut next = FloatSliderConfig {
                             min_edit: Some(s.clone()),
@@ -181,7 +182,7 @@ where
             let submit_cfg = config.clone();
             row![
                 text("Max").size(10).color(colors::TEXT_MUTED).width(30),
-                text_input("", &max_display)
+                text_input("", max_display)
                     .on_input(move |s| {
                         let mut next = FloatSliderConfig {
                             max_edit: Some(s.clone()),
@@ -216,7 +217,7 @@ where
             let submit_cfg = config.clone();
             row![
                 text("Step").size(10).color(colors::TEXT_MUTED).width(30),
-                text_input("", &step_display)
+                text_input("", step_display)
                     .on_input(move |s| {
                         let mut next = FloatSliderConfig {
                             step_edit: Some(s.clone()),
@@ -258,9 +259,9 @@ where
             column![min_input, max_input, step_input].spacing(4)
         ]
         .spacing(8)
-        .into()
+        .boxed()
     } else {
-        main_content.into()
+        main_content.boxed()
     };
 
     // Footer background - slightly darker than body
@@ -278,7 +279,7 @@ where
         )
     ]
     .width(180.0)
-    .into()
+    .boxed()
 }
 
 /// Slider style for the main value slider
@@ -332,7 +333,6 @@ fn config_input_style(_: &iced::Theme, status: text_input::Status) -> text_input
             width: 1.0,
             radius: 3.0.into(),
         },
-        icon: colors::TEXT_MUTED,
         placeholder: Color::from_rgba(1.0, 1.0, 1.0, 0.3),
         value: Color::WHITE,
         selection: colors::PIN_NUMBER,

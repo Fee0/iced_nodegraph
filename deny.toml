@@ -61,3 +61,11 @@ unknown-git = "deny"
 # Only the public registry is allowed. The in-tree crates are path
 # dependencies, which are not registry/git sources and need no entry here.
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+# iced's development branch, which the workspace pins by revision, and the
+# forks it depends on from git. Drop these once iced 0.15 is on crates.io.
+allow-git = [
+    "https://github.com/iced-rs/iced",
+    "https://github.com/iced-rs/cryoglyph.git",
+    "https://github.com/iced-rs/winit.git",
+    "https://github.com/hecrj/cosmic-text.git",
+]

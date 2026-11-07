@@ -13,7 +13,7 @@
 //! `p .. p + (w, h)`.
 
 use iced::widget::{container, text};
-use iced::{Element, Length, Point, Size, Theme, Vector};
+use iced::{Element, Length, Point, Size, Theme, Vector, Widget};
 use iced::{keyboard, mouse};
 use iced_nodegraph::{
     AnchorStatus, DragInfo, Ids, Minimap, NodeGraph, PinRef, anchor, default_anchor_style, edge,
@@ -82,12 +82,12 @@ fn graph_with_selected(
     nodes: &[(usize, Point)],
     selected: &[usize],
 ) -> Element<'static, Msg, Theme, Renderer> {
-    graph_of(nodes, selected, false).into()
+    graph_of(nodes, selected, false).boxed()
 }
 
 /// Like [`graph_with`], but every node carries a resize grip.
 fn resizable_graph(nodes: &[(usize, Point)]) -> Element<'static, Msg, Theme, Renderer> {
-    graph_of(nodes, &[], true).into()
+    graph_of(nodes, &[], true).boxed()
 }
 
 /// Like [`graph_with_selected`], but node drags snap to a [`GRID`]-wide world
@@ -96,7 +96,7 @@ fn snap_graph(
     nodes: &[(usize, Point)],
     selected: &[usize],
 ) -> Element<'static, Msg, Theme, Renderer> {
-    graph_of(nodes, selected, false).snap_grid(GRID).into()
+    graph_of(nodes, selected, false).snap_grid(GRID).boxed()
 }
 
 fn graph_of(nodes: &[(usize, Point)], selected: &[usize], resizable: bool) -> Graph {
@@ -414,7 +414,7 @@ fn anchor_drag_lands_on_the_snap_grid() {
         .snap_grid(GRID)
         .on_anchor_move(Msg::AnchorMove);
     ng = ng.push_anchor(anchor(ANCHOR_A, at));
-    let mut ui = Simulator::new(Element::from(ng));
+    let mut ui = Simulator::new(Widget::boxed(ng));
     drag(&mut ui, at, at + Vector::new(37.0, 12.0));
 
     assert_eq!(
@@ -428,7 +428,7 @@ fn anchor_drag_lands_on_the_snap_grid() {
 #[test]
 fn resize_snaps_the_far_corner() {
     let start = Point::new(10.0, 10.0);
-    let mut ui = Simulator::new(Element::from(
+    let mut ui = Simulator::new(Widget::boxed(
         graph_of(&[(0, start)], &[], true).snap_grid(GRID),
     ));
     // Raw size (167, 93) puts the far corner at (177, 103); the nearest grid
@@ -465,7 +465,7 @@ fn frame_graph() -> Element<'static, Msg, Theme, Renderer> {
         .width(Length::Fixed(FRAME_SIZE.width))
         .height(Length::Fixed(FRAME_SIZE.height));
     ng = ng.push_node(node(FRAME_ID, Point::ORIGIN, body).frame());
-    ng.into()
+    ng.boxed()
 }
 
 #[test]
@@ -645,7 +645,7 @@ fn in_anchor() -> Point {
     Point::new(IN_POS.x, IN_POS.y + NODE_H / 2.0)
 }
 
-fn pin_body<M: 'static>() -> iced::widget::Container<'static, M, Theme, Renderer> {
+fn pin_body() -> iced::widget::Container<'static, iced::widget::Text<'static, Theme>, Theme> {
     container(text("p"))
         .width(Length::Fixed(NODE_W))
         .height(Length::Fixed(NODE_H))
@@ -667,26 +667,62 @@ fn a_pin_over_foreign_id_types_asserts_in_debug() {
     ng = ng.push_node(node(
         0usize,
         OUT_POS,
-        pin!(Right, "out", pin_body::<_>(), Output),
+        pin!(Right, "out", pin_body(), Output),
     ));
-    let mut ui = Simulator::new(Element::from(ng));
+    let mut ui = Simulator::new(Widget::boxed(ng));
     click(&mut ui, center(OUT_POS));
 }
 
-/// A node body is laid out against unbounded limits so it shrinks to its
-/// content, which leaves a `Length::Fill` element with nothing to fill: its
-/// size is infinite and the node has no rectangle to draw. Debug builds name
-/// the node at layout instead of failing on NaN geometry in the renderer.
-#[cfg(debug_assertions)]
+/// A node body is laid out against limits flagged infinite on both axes, so
+/// it shrinks to its content and a `Length::Fill` element inside it resolves
+/// to its intrinsic size instead of an infinite one: the body is exactly as
+/// wide as its content, and it is hit like any other node body.
 #[test]
-#[should_panic(expected = "resolved to an infinite size")]
-fn a_fill_body_asserts_in_debug() {
+fn a_fill_body_shrinks_to_its_content() {
+    let body = iced::widget::Id::new("fill-body");
     let mut ui = Simulator::new(graph_of(&[], &[], false).push_node(node(
         0usize,
         OUT_POS,
-        container(text("wide")).width(Length::Fill),
+        container(text("wide")).id(body.clone()).width(Length::Fill),
     )));
-    click(&mut ui, center(OUT_POS));
+
+    let content = ui
+        .find("wide")
+        .expect("the body's text is reachable")
+        .bounds();
+    let filled = ui
+        .find(body)
+        .expect("the body container is reachable")
+        .bounds();
+    assert!(
+        filled.width.is_finite() && filled.height.is_finite(),
+        "a Fill body must resolve to a finite size, got {filled:?}",
+    );
+    assert_eq!(
+        filled.size(),
+        content.size(),
+        "a Fill body must shrink to its content",
+    );
+
+    // Beside first, while nothing is selected, so a hit would report [0].
+    click(
+        &mut ui,
+        Point::new(filled.x + filled.width + 20.0, filled.center_y()),
+    );
+    let missed = last_selection(&ui.drain().collect::<Vec<_>>());
+    assert_ne!(
+        missed,
+        Some(vec![0]),
+        "a click beside the content must miss the body: it is no wider than its content",
+    );
+
+    click(&mut ui, filled.center());
+    let hit = last_selection(&messages(ui));
+    assert_eq!(
+        hit,
+        Some(vec![0]),
+        "a click on the Fill body must select it"
+    );
 }
 
 /// Two single-pin nodes: node 0 has a Right/Output pin, node 1 a Left/Input pin.
@@ -701,17 +737,13 @@ fn pin_graph(connect_ok: bool, seed_edge: bool) -> Element<'static, Msg, Theme, 
     ng = ng.push_node(node(
         0usize,
         OUT_POS,
-        pin!(Right, 0usize, pin_body::<_>(), Output),
+        pin!(Right, 0usize, pin_body(), Output),
     ));
-    ng = ng.push_node(node(
-        1usize,
-        IN_POS,
-        pin!(Left, 0usize, pin_body::<_>(), Input),
-    ));
+    ng = ng.push_node(node(1usize, IN_POS, pin!(Left, 0usize, pin_body(), Input)));
     if seed_edge {
         ng = ng.push_edge(edge(0, PinRef::new(0, 0), PinRef::new(1, 0)));
     }
-    ng.into()
+    ng.boxed()
 }
 
 #[test]
@@ -785,14 +817,10 @@ fn refusal_graph(connect_ok: bool) -> Element<'static, Msg, Theme, Renderer> {
     ng = ng.push_node(node(
         0usize,
         OUT_POS,
-        pin!(Right, 0usize, pin_body::<_>(), Output),
+        pin!(Right, 0usize, pin_body(), Output),
     ));
-    ng = ng.push_node(node(
-        1usize,
-        IN_POS,
-        pin!(Left, 0usize, pin_body::<_>(), Input),
-    ));
-    ng.into()
+    ng = ng.push_node(node(1usize, IN_POS, pin!(Left, 0usize, pin_body(), Input)));
+    ng.boxed()
 }
 
 /// Every refused pair reported, in publish order.
@@ -932,16 +960,12 @@ fn cutting_an_edge_reports_its_host_id() {
     ng = ng.push_node(node(
         0usize,
         OUT_POS,
-        pin!(Right, 0usize, pin_body::<_>(), Output),
+        pin!(Right, 0usize, pin_body(), Output),
     ));
-    ng = ng.push_node(node(
-        1usize,
-        IN_POS,
-        pin!(Left, 0usize, pin_body::<_>(), Input),
-    ));
+    ng = ng.push_node(node(1usize, IN_POS, pin!(Left, 0usize, pin_body(), Input)));
     ng = ng.push_edge(edge("wire-7", PinRef::new(0, 0), PinRef::new(1, 0)));
 
-    let mut ui = Simulator::new(Element::from(ng));
+    let mut ui = Simulator::new(Widget::boxed(ng));
     let mid = Point::new((out_anchor().x + in_anchor().x) / 2.0, out_anchor().y);
     ui.point_at(mid);
     ui.simulate([
@@ -973,7 +997,7 @@ fn camera_graph() -> Element<'static, Msg, Theme, Renderer> {
             .width(Length::Fixed(NODE_W))
             .height(Length::Fixed(NODE_H)),
     ));
-    ng.into()
+    ng.boxed()
 }
 
 fn last_camera(msgs: &[Msg]) -> Option<(Point, f32)> {
@@ -1097,20 +1121,16 @@ fn rewire_graph() -> Element<'static, Msg, Theme, Renderer> {
     ng = ng.push_node(node(
         0usize,
         OUT_POS,
-        pin!(Right, 0usize, pin_body::<_>(), Output),
+        pin!(Right, 0usize, pin_body(), Output),
     ));
-    ng = ng.push_node(node(
-        1usize,
-        IN_POS,
-        pin!(Left, 0usize, pin_body::<_>(), Input),
-    ));
+    ng = ng.push_node(node(1usize, IN_POS, pin!(Left, 0usize, pin_body(), Input)));
     ng = ng.push_node(node(
         2usize,
         Point::new(IN_POS.x, 300.0),
-        pin!(Left, 0usize, pin_body::<_>(), Input),
+        pin!(Left, 0usize, pin_body(), Input),
     ));
     ng = ng.push_edge(edge(0, PinRef::new(0, 0), PinRef::new(1, 0)));
-    ng.into()
+    ng.boxed()
 }
 
 #[test]
@@ -1183,20 +1203,16 @@ fn default_rejects_second_edge_to_occupied_input() {
     ng = ng.push_node(node(
         0usize,
         OUT_POS,
-        pin!(Right, 0usize, pin_body::<_>(), Output),
+        pin!(Right, 0usize, pin_body(), Output),
     ));
-    ng = ng.push_node(node(
-        1usize,
-        IN_POS,
-        pin!(Left, 0usize, pin_body::<_>(), Input),
-    ));
+    ng = ng.push_node(node(1usize, IN_POS, pin!(Left, 0usize, pin_body(), Input)));
     ng = ng.push_node(node(
         2usize,
         Point::new(OUT_POS.x, 300.0),
-        pin!(Right, 0usize, pin_body::<_>(), Output),
+        pin!(Right, 0usize, pin_body(), Output),
     ));
     ng = ng.push_edge(edge(0, PinRef::new(0, 0), PinRef::new(1, 0)));
-    let mut ui = Simulator::new(Element::from(ng));
+    let mut ui = Simulator::new(Widget::boxed(ng));
 
     let from = Point::new(OUT_POS.x + NODE_W, 300.0 + NODE_H / 2.0); // node 2 right pin
     drag(&mut ui, from, in_anchor());
@@ -1228,13 +1244,9 @@ fn occlusion_graph() -> Element<'static, Msg, Theme, Renderer> {
     ng = ng.push_node(node(
         0usize,
         OUT_POS,
-        pin!(Right, 0usize, pin_body::<_>(), Output),
+        pin!(Right, 0usize, pin_body(), Output),
     ));
-    ng = ng.push_node(node(
-        1usize,
-        IN_POS,
-        pin!(Left, 0usize, pin_body::<_>(), Input),
-    ));
+    ng = ng.push_node(node(1usize, IN_POS, pin!(Left, 0usize, pin_body(), Input)));
     // Cover node 1 input anchor (IN_POS.x, IN_POS.y + H/2) with a plain body.
     ng = ng.push_node(node(
         2usize,
@@ -1243,7 +1255,7 @@ fn occlusion_graph() -> Element<'static, Msg, Theme, Renderer> {
             .width(Length::Fixed(NODE_W))
             .height(Length::Fixed(NODE_H)),
     ));
-    ng.into()
+    ng.boxed()
 }
 
 #[test]
@@ -1298,10 +1310,10 @@ fn overlaid_graph() -> Element<'static, Msg, Theme, Renderer> {
             .width(Length::Fixed(NODE_W))
             .height(Length::Fixed(NODE_H)),
     ));
-    let graph: Element<'static, Msg, Theme, Renderer> = ng.into();
+    let graph: Element<'static, Msg, Theme, Renderer> = ng.boxed();
     let overlay =
         iced::widget::opaque(container(text("")).width(Length::Fill).height(Length::Fill));
-    iced::widget::stack![graph, overlay].into()
+    iced::widget::stack![graph, overlay].boxed()
 }
 
 #[test]
@@ -1344,7 +1356,7 @@ const ON_OUTER_CANVAS: Point = Point::new(700.0, 500.0);
 /// The outer graph: every callback the tests observe wired to the plain `Msg`
 /// variants, node 1 wrapping `inner`.
 fn nested_graph(
-    inner: impl Into<Element<'static, Msg, Theme, Renderer>>,
+    inner: impl iced::advanced::Widget<Msg, Theme, Renderer> + 'static,
 ) -> Element<'static, Msg, Theme, Renderer> {
     let mut ng: Graph = NodeGraph::default()
         .width(Length::Fill)
@@ -1355,7 +1367,7 @@ fn nested_graph(
     ng = ng.push_node(node(
         0usize,
         OUT_POS,
-        pin!(Right, 0usize, pin_body::<_>(), Output),
+        pin!(Right, 0usize, pin_body(), Output),
     ));
     ng = ng.push_node(node(
         1usize,
@@ -1364,7 +1376,7 @@ fn nested_graph(
             .width(INNER_SIZE.width)
             .height(INNER_SIZE.height),
     ));
-    ng.into()
+    ng.boxed()
 }
 
 /// The inner graph over the same `Ids`, reporting through the `Inner*`
@@ -1377,7 +1389,7 @@ fn inner_graph() -> Graph {
     ng.push_node(node(
         0usize,
         Point::ORIGIN,
-        pin!(Left, 0usize, pin_body::<_>(), Input),
+        pin!(Left, 0usize, pin_body(), Input),
     ))
 }
 
@@ -1422,7 +1434,7 @@ fn nested_graph_over_other_ids_does_not_assert() {
     let inner = inner.push_node(node(
         0usize,
         Point::ORIGIN,
-        pin!(Left, "in", pin_body::<_>(), Input),
+        pin!(Left, "in", pin_body(), Input),
     ));
     let mut ui = Simulator::new(nested_graph(inner));
     drag(&mut ui, out_anchor(), in_anchor());
@@ -1497,7 +1509,7 @@ fn click_on_button_in_node_routes_to_button_not_node() {
             .height(Length::Fixed(30.0))
             .on_press(Msg::Button),
     ));
-    let mut ui = Simulator::new(Element::from(ng));
+    let mut ui = Simulator::new(Widget::boxed(ng));
 
     click(&mut ui, Point::new(140.0, 115.0)); // inside the button
 
@@ -1522,19 +1534,23 @@ fn backspace_in_focused_text_input_does_not_delete_node() {
         .height(Length::Fill)
         .on_select(Msg::Select)
         .on_delete(Msg::Delete);
-    ng = ng.push_node(node(
-        0usize,
-        Point::new(100.0, 100.0),
-        iced::widget::text_input("", "abc")
-            .width(Length::Fixed(120.0))
-            .on_input(Msg::Input),
-    ));
-    let mut ui = Simulator::new(Element::from(ng));
+    ng = ng.push_node(
+        node(
+            0usize,
+            Point::new(100.0, 100.0),
+            iced::widget::text_input("", "abc")
+                .width(Length::Fixed(120.0))
+                .on_input(Msg::Input),
+        )
+        .selected(true),
+    );
+    let mut ui = Simulator::new(Widget::boxed(ng));
 
-    // Focus the input, then select the node via Ctrl+A (handled by the graph
-    // before children), then Backspace.
+    // The host marks the node selected; focus the input, then Backspace. The
+    // selection cannot come from Ctrl+A here: on iced master `text_input`
+    // reads the command modifier from the key event itself, so a focused
+    // input consumes Ctrl+A as select-all-text before the graph sees it.
     click(&mut ui, Point::new(150.0, 115.0));
-    ui.simulate([key_pressed(keyboard::Key::Character("a".into()), cmd())]);
     ui.simulate([key_pressed(
         keyboard::Key::Named(keyboard::key::Named::Backspace),
         keyboard::Modifiers::default(),
@@ -1586,7 +1602,7 @@ fn a_node_and_an_anchor_may_share_a_number() {
     ));
     ng = ng.push_anchor(anchor(7usize, Point::new(120.0, 120.0)));
 
-    let ui = Simulator::new(Element::from(ng));
+    let ui = Simulator::new(Widget::boxed(ng));
     let _ = ui.into_messages();
 }
 
@@ -1606,15 +1622,11 @@ fn output_to_output_does_not_connect() {
     ng = ng.push_node(node(
         0usize,
         OUT_POS,
-        pin!(Right, 0usize, pin_body::<_>(), Output),
+        pin!(Right, 0usize, pin_body(), Output),
     ));
     // Second output pin, anchored at IN_POS left edge for an easy drag target.
-    ng = ng.push_node(node(
-        1usize,
-        IN_POS,
-        pin!(Left, 0usize, pin_body::<_>(), Output),
-    ));
-    let mut ui = Simulator::new(Element::from(ng));
+    ng = ng.push_node(node(1usize, IN_POS, pin!(Left, 0usize, pin_body(), Output)));
+    let mut ui = Simulator::new(Widget::boxed(ng));
 
     drag(&mut ui, out_anchor(), in_anchor());
 
@@ -1636,9 +1648,9 @@ fn cannot_connect_pin_to_itself() {
     ng = ng.push_node(node(
         0usize,
         OUT_POS,
-        pin!(Right, 0usize, pin_body::<_>(), Output),
+        pin!(Right, 0usize, pin_body(), Output),
     ));
-    let mut ui = Simulator::new(Element::from(ng));
+    let mut ui = Simulator::new(Widget::boxed(ng));
 
     let a = out_anchor();
     ui.point_at(a);
@@ -1716,17 +1728,13 @@ fn zoomed_pin_graph(seed_edge: bool) -> Element<'static, Msg, Theme, Renderer> {
     ng = ng.push_node(node(
         0usize,
         OUT_POS,
-        pin!(Right, 0usize, pin_body::<_>(), Output),
+        pin!(Right, 0usize, pin_body(), Output),
     ));
-    ng = ng.push_node(node(
-        1usize,
-        IN_POS,
-        pin!(Left, 0usize, pin_body::<_>(), Input),
-    ));
+    ng = ng.push_node(node(1usize, IN_POS, pin!(Left, 0usize, pin_body(), Input)));
     if seed_edge {
         ng = ng.push_edge(edge(0, PinRef::new(0, 0), PinRef::new(1, 0)));
     }
-    ng.into()
+    ng.boxed()
 }
 
 #[test]
@@ -1893,7 +1901,7 @@ fn anchor_drag_reports_the_anchor() {
         .on_drag_start(Msg::DragStart)
         .on_drag_end(|| Msg::DragEnd);
     ng = ng.push_anchor(anchor(ANCHOR_A, at));
-    let mut ui = Simulator::new(Element::from(ng));
+    let mut ui = Simulator::new(Widget::boxed(ng));
     drag(
         &mut ui,
         at + CORE_NUDGE,
@@ -2016,7 +2024,7 @@ fn snapshot_node_graph() -> Element<'static, Msg, Theme, Renderer> {
         });
     // Centered: 1024x768 -> node spans (432,344)..(592,424).
     ng = ng.push_node(node(0usize, Point::new(432.0, 344.0), body));
-    ng.into()
+    ng.boxed()
 }
 
 /// Removes a golden and the backend-suffixed variants iced_test may have
@@ -2083,14 +2091,10 @@ fn pin_press_without_on_connect_falls_through_to_selection() {
     ng = ng.push_node(node(
         0usize,
         OUT_POS,
-        pin!(Right, 0usize, pin_body::<_>(), Output),
+        pin!(Right, 0usize, pin_body(), Output),
     ));
-    ng = ng.push_node(node(
-        1usize,
-        IN_POS,
-        pin!(Left, 0usize, pin_body::<_>(), Input),
-    ));
-    let mut ui = Simulator::new(Element::from(ng));
+    ng = ng.push_node(node(1usize, IN_POS, pin!(Left, 0usize, pin_body(), Input)));
+    let mut ui = Simulator::new(Widget::boxed(ng));
 
     // Just inside node 0's right edge: within PIN_CLICK_THRESHOLD of the pin, yet
     // still over the body, so a blocked edge drag falls through to body selection.
@@ -2326,7 +2330,7 @@ fn graph_with_anchor(view: View, at: Point) -> Element<'static, Msg, Theme, Rend
         .camera(view.position, view.zoom)
         .on_anchor_move(Msg::AnchorMove);
     ng = ng.push_anchor(anchor(ANCHOR_A, at));
-    ng.into()
+    ng.boxed()
 }
 
 /// The drag reports the world position the anchor ended up at, outright rather
@@ -2371,7 +2375,7 @@ fn an_anchor_is_not_grabbable_without_the_callback() {
         .height(Length::Fill)
         .on_select(Msg::Select);
     ng = ng.push_anchor(anchor(ANCHOR_A, at));
-    let mut ui = Simulator::new(Element::from(ng));
+    let mut ui = Simulator::new(Widget::boxed(ng));
     drag(&mut ui, at, Point::new(260.0, 190.0));
 
     let msgs = messages(ui);
@@ -2441,12 +2445,12 @@ fn route_scene(
     ng = ng.push_node(node(
         0usize,
         OUT_POS,
-        pin!(Right, 0usize, pin_body::<_>(), Output),
+        pin!(Right, 0usize, pin_body(), Output),
     ));
     ng = ng.push_node(node(
         1usize,
         ROUTE_IN_POS,
-        pin!(Left, 0usize, pin_body::<_>(), Input),
+        pin!(Left, 0usize, pin_body(), Input),
     ));
     for &(id, at) in anchors {
         ng = ng.push_anchor(anchor(id, at));
@@ -2454,7 +2458,7 @@ fn route_scene(
     ng = ng.push_edge(
         edge(ROUTE_EDGE, PinRef::new(0, 0), PinRef::new(1, 0)).route(route.iter().copied()),
     );
-    ng.into()
+    ng.boxed()
 }
 
 /// All three route-drag callbacks wired - the gating the mid-run and wrap zones
@@ -2693,19 +2697,19 @@ fn cutting_a_routed_cable_kills_one_edge() {
         .on_edge_delete(Msg::EdgeDelete);
     let shared = Point::new(330.0, 300.0);
     for (id, at) in [(0usize, OUT_POS), (2usize, Point::new(OUT_POS.x, 500.0))] {
-        ng = ng.push_node(node(id, at, pin!(Right, 0usize, pin_body::<_>(), Output)));
+        ng = ng.push_node(node(id, at, pin!(Right, 0usize, pin_body(), Output)));
     }
     for (id, at) in [
         (1usize, ROUTE_IN_POS),
         (3usize, Point::new(ROUTE_IN_POS.x, 500.0)),
     ] {
-        ng = ng.push_node(node(id, at, pin!(Left, 0usize, pin_body::<_>(), Input)));
+        ng = ng.push_node(node(id, at, pin!(Left, 0usize, pin_body(), Input)));
     }
     ng = ng.push_anchor(anchor(ANCHOR_A, shared));
     ng = ng.push_edge(edge(0usize, PinRef::new(0, 0), PinRef::new(1, 0)).route([ANCHOR_A]));
     ng = ng.push_edge(edge(1usize, PinRef::new(2, 0), PinRef::new(3, 0)).route([ANCHOR_A]));
 
-    let mut ui = Simulator::new(Element::from(ng));
+    let mut ui = Simulator::new(Widget::boxed(ng));
     // 100 px along the upper cable, where it has already left the straight run
     // toward the shared anchor but is still 147 px from the lower one.
     let on_upper_cable = Point::new(228.0, 160.0);
@@ -2739,29 +2743,29 @@ fn a_route_drag_snaps_onto_an_occupied_anchor() {
         ng = ng.push_node(node(
             0usize,
             OUT_POS,
-            pin!(Right, 0usize, pin_body::<_>(), Output),
+            pin!(Right, 0usize, pin_body(), Output),
         ));
         ng = ng.push_node(node(
             1usize,
             ROUTE_IN_POS,
-            pin!(Left, 0usize, pin_body::<_>(), Input),
+            pin!(Left, 0usize, pin_body(), Input),
         ));
         ng = ng.push_node(node(
             2usize,
             Point::new(OUT_POS.x, 500.0),
-            pin!(Right, 0usize, pin_body::<_>(), Output),
+            pin!(Right, 0usize, pin_body(), Output),
         ));
         ng = ng.push_node(node(
             3usize,
             Point::new(ROUTE_IN_POS.x, 500.0),
-            pin!(Left, 0usize, pin_body::<_>(), Input),
+            pin!(Left, 0usize, pin_body(), Input),
         ));
         ng = ng.push_anchor(anchor(ANCHOR_A, A_AT));
         // Edge 0 already wraps A, so A is singly occupied.
         ng = ng.push_edge(edge(0usize, PinRef::new(0, 0), PinRef::new(1, 0)).route([ANCHOR_A]));
         // Edge 1 runs well below and is unrouted.
         ng = ng.push_edge(edge(1usize, PinRef::new(2, 0), PinRef::new(3, 0)));
-        Element::from(ng)
+        Widget::boxed(ng)
     };
     // The lower cable's mid-run, and the core of the busy anchor.
     let lower_mid = Point::new(bare_mid().x, 515.0);
@@ -2991,13 +2995,9 @@ fn offset_scene(view: View, route: &[usize]) -> Element<'static, Msg, Theme, Ren
     ng = ng.push_node(node(
         0usize,
         OUT_POS,
-        pin!(Right, 0usize, pin_body::<_>(), Output),
+        pin!(Right, 0usize, pin_body(), Output),
     ));
-    ng = ng.push_node(node(
-        1usize,
-        IN_POS,
-        pin!(Left, 0usize, pin_body::<_>(), Input),
-    ));
+    ng = ng.push_node(node(1usize, IN_POS, pin!(Left, 0usize, pin_body(), Input)));
     ng = ng.push_anchor(anchor(OFFSET_ANCHOR, OFFSET_ANCHOR_AT));
     ng =
         ng.push_edge(edge(OFFSET_EDGE, PinRef::new(0, 0), PinRef::new(1, 0)).route(route.to_vec()));
@@ -3007,7 +3007,7 @@ fn offset_scene(view: View, route: &[usize]) -> Element<'static, Msg, Theme, Ren
             .height(Length::Fixed(TOOLBAR)),
         ng
     ]
-    .into()
+    .boxed()
 }
 
 /// The core is drawn at world plus widget origin, so that is where it has to be
@@ -3157,7 +3157,7 @@ fn minimap_graph(
     for &(id, at) in anchors {
         ng = ng.push_anchor(anchor(id, at));
     }
-    ng.into()
+    ng.boxed()
 }
 
 /// Whether the world point `p` lands inside the 1024x768 viewport under the

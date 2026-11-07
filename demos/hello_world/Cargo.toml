@@ -18,7 +18,6 @@ doc = false
 demo_common.workspace = true
 iced = { workspace = true, features = ["wgpu", "crisp", "thread-pool", "linux-theme-detection", "x11", "wayland"] }
 iced_nodegraph.workspace = true
-iced_palette.workspace = true
 # Node and edge ids; runs on both native and WASM (see getrandom below).
 nanoid.workspace = true
 

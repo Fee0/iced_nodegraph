@@ -73,7 +73,7 @@ impl EdgeStyle {
     /// Use it as a style directly: `.style(|t, s, _, _| EdgeStyle::data_flow(t, s))`.
     pub fn data_flow(theme: &Theme, status: EdgeStatus) -> Self {
         let roles = Roles::of(theme);
-        let hue = roles.legible(theme.extended_palette().primary.base.color);
+        let hue = roles.legible(theme.palette().primary.base.color);
         Self::stroked(theme, status, hue, Pattern::solid(2.5))
     }
 
@@ -105,7 +105,7 @@ impl EdgeStyle {
     /// ring in the pin color.
     pub fn highlighted(theme: &Theme, status: EdgeStatus) -> Self {
         let roles = Roles::of(theme);
-        let hue = roles.legible(theme.extended_palette().warning.base.color);
+        let hue = roles.legible(theme.palette().warning.base.color);
         let mut s = Self::stroked(theme, status, hue, Pattern::solid(3.0));
         s.border_color = Color {
             a: 0.3,

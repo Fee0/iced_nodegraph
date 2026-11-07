@@ -6,6 +6,7 @@
 //! Color inputs are `ColorQuad`s; the shadow offset is a single 2D vector.
 
 use demo_common::NodeContentStyle;
+use iced::Widget;
 use iced_nodegraph::{ColorQuad, Pattern, pin};
 
 use super::PatternType;
@@ -193,7 +194,7 @@ where
     ]
     .align_y(iced::Alignment::Center);
 
-    let mut items: Vec<iced::Element<'_, Message>> = vec![config_row.into()];
+    let mut items: Vec<iced::Element<'_, Message>> = vec![config_row.boxed()];
 
     // Precompute display values
     let border_width = result.border_pattern.map(|p| p.thickness);
@@ -225,7 +226,7 @@ where
                 (pins::node::CORNER_RADIUS, pins::Float),
                 (pins::node::OPACITY, pins::Float)
             ]
-            .into()
+            .boxed()
         }),
         vec![
             pin_row(
@@ -238,7 +239,7 @@ where
                 ),
                 color_swatch(result.fill_color.map(|q| q.near_start)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -249,7 +250,7 @@ where
                 ),
                 value_display(fmt_float(result.corner_radius, 1)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -264,7 +265,7 @@ where
                         .map_or("--".to_string(), |v| format!("{:.0}%", v * 100.0)),
                 ),
             )
-            .into(),
+            .boxed(),
         ],
     );
 
@@ -281,7 +282,7 @@ where
                 (pins::node::BORDER_OUTLINE_WIDTH, pins::Float),
                 (pins::node::BORDER_OUTLINE_COLOR, pins::ColorData)
             ]
-            .into()
+            .boxed()
         }),
         vec![
             pin_row(
@@ -294,7 +295,7 @@ where
                 ),
                 color_swatch(result.border_color.map(|q| q.near_start)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -305,7 +306,7 @@ where
                 ),
                 value_display(fmt_float(border_width, 1)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -316,7 +317,7 @@ where
                 ),
                 value_display(fmt_float(inputs.border_outline_width, 1)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -327,7 +328,7 @@ where
                 ),
                 color_swatch(inputs.border_outline_color.map(|q| q.near_start)),
             )
-            .into(),
+            .boxed(),
         ],
     );
 
@@ -345,7 +346,7 @@ where
                 (pins::node::ANGLE, pins::Float),
                 (pins::node::SPEED, pins::Float)
             ]
-            .into()
+            .boxed()
         }),
         vec![
             pin_row(
@@ -358,7 +359,7 @@ where
                 ),
                 value_display(pattern_label),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -369,7 +370,7 @@ where
                 ),
                 value_display(fmt_float(inputs.dash_length, 1)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -380,7 +381,7 @@ where
                 ),
                 value_display(fmt_float(inputs.gap_length, 1)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -391,7 +392,7 @@ where
                 ),
                 value_display(angle_display),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -402,7 +403,7 @@ where
                 ),
                 value_display(fmt_float(inputs.animation_speed, 0)),
             )
-            .into(),
+            .boxed(),
         ],
     );
 
@@ -418,7 +419,7 @@ where
                 (pins::node::SHADOW_DISTANCE, pins::Float),
                 (pins::node::SHADOW_OFFSET, pins::Vec2Data)
             ]
-            .into()
+            .boxed()
         }),
         vec![
             pin_row(
@@ -431,7 +432,7 @@ where
                 ),
                 color_swatch(inputs.shadow_color.map(|q| q.near_start)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -442,7 +443,7 @@ where
                 ),
                 value_display(fmt_float(inputs.shadow_distance, 1)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -453,7 +454,7 @@ where
                 ),
                 value_display(offset_display),
             )
-            .into(),
+            .boxed(),
         ],
     );
 
@@ -464,5 +465,5 @@ where
         container(content).padding([8, 10])
     ]
     .width(160.0)
-    .into()
+    .boxed()
 }

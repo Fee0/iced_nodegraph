@@ -3,16 +3,17 @@
 //! Two palette source nodes whose color pins can be wired straight into config
 //! nodes' color inputs (or a ColorQuad builder) instead of hand-picking colors:
 //!
-//! - [`theme_node`] exposes the basic [`iced::theme::Palette`] (the six flat
+//! - [`theme_node`] exposes the basic [`iced::theme::palette::Seed`] (the six flat
 //!   entries).
 //! - [`theme_extended_node`] exposes the
-//!   [`extended_palette`](iced::Theme::extended_palette), each accent group as
+//!   [`palette`](iced::Theme::palette), each accent group as
 //!   its `base`/`weak`/`strong` step.
 //!
 //! Both resolve from the current theme during propagation, so they follow theme
 //! changes live.
 
 use demo_common::NodeContentStyle;
+use iced::Widget;
 use iced::widget::{column, container, row, text};
 use iced::{Alignment, Length};
 use iced_nodegraph::pin;
@@ -41,10 +42,10 @@ where
     ]
     .spacing(6)
     .align_y(Alignment::Center)
-    .into()
+    .boxed()
 }
 
-/// Creates a Theme node exposing the basic [`iced::theme::Palette`] as outputs.
+/// Creates a Theme node exposing the basic [`iced::theme::palette::Seed`] as outputs.
 pub fn theme_node<'a, Message>(theme: &'a iced::Theme) -> iced::Element<'a, Message>
 where
     Message: Clone + 'a,
@@ -52,7 +53,7 @@ where
     use pins::theme as t;
 
     let style = NodeContentStyle::output(theme);
-    let p = theme.palette();
+    let p = theme.seed();
 
     let content = column![
         palette_row("background", t::BACKGROUND, p.background),
@@ -69,11 +70,11 @@ where
         container(content).padding([8, 10])
     ]
     .width(160.0)
-    .into()
+    .boxed()
 }
 
 /// Creates a Theme Extended node exposing the
-/// [`extended_palette`](iced::Theme::extended_palette): each accent group as its
+/// [`palette`](iced::Theme::palette): each accent group as its
 /// `base`/`weak`/`strong` step.
 pub fn theme_extended_node<'a, Message>(theme: &'a iced::Theme) -> iced::Element<'a, Message>
 where
@@ -82,7 +83,7 @@ where
     use pins::theme_ext as t;
 
     let style = NodeContentStyle::output(theme);
-    let p = theme.extended_palette();
+    let p = theme.palette();
 
     let content = column![
         palette_row("bg base", t::BACKGROUND_BASE, p.background.base.color),
@@ -115,5 +116,5 @@ where
         container(content).padding([8, 10])
     ]
     .width(170.0)
-    .into()
+    .boxed()
 }

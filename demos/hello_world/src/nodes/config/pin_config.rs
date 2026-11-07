@@ -3,6 +3,7 @@
 //! Builds a PinConfig from individual field inputs with inheritance support.
 
 use demo_common::NodeContentStyle;
+use iced::Widget;
 use iced::{
     Color, Length,
     alignment::Horizontal,
@@ -113,9 +114,9 @@ where
                     },
                     ..Default::default()
                 })
-                .into()
+                .boxed()
         } else {
-            text("--").size(9).into()
+            text("--").size(9).boxed()
         };
     let color_row = row![
         pin!(
@@ -210,9 +211,9 @@ where
                     },
                     ..Default::default()
                 })
-                .into()
+                .boxed()
         } else {
-            text("--").size(9).into()
+            text("--").size(9).boxed()
         };
     let border_color_row = row![
         pin!(
@@ -267,5 +268,5 @@ where
         container(content).padding([8, 10])
     ]
     .width(150.0)
-    .into()
+    .boxed()
 }

@@ -84,7 +84,7 @@ impl<T: ShaderSize> Buffer<T> {
             usage,
             generation: 0,
             written_bytes: 0,
-            max_bytes: u64::from(device.limits().max_storage_buffer_binding_size) & !3,
+            max_bytes: device.limits().max_storage_buffer_binding_size & !3,
             dropped_items: 0,
         }
     }

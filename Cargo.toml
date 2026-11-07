@@ -42,16 +42,14 @@ demo_shader_editor = { path = "demos/shader_editor" }
 #
 # `iced` itself is only for the demo binaries and for tests/doctests, and it
 # keeps `default-features = false` so each member opts in explicitly.
-iced = { version = "0.14", default-features = false }
-iced_widget = "0.14"
-iced_wgpu = "0.14"
-iced_runtime = "0.14"
-iced_test = "0.14"
-
-# 0.1.1 is the first release that does not depend on the `iced` umbrella crate.
-# Anything older re-enables iced's defaults for the whole demo graph, which is
-# exactly what the `default-features = false` above exists to prevent.
-iced_palette = "0.1.1"
+#
+# Pinned to a revision of iced's development branch (0.15-dev). Bump the `rev`
+# on all five lines together: they are one repository and must not diverge.
+iced = { git = "https://github.com/iced-rs/iced", rev = "8ff48c42b0d5188223501ea1ccc506fd5beaf36a", default-features = false }
+iced_widget = { git = "https://github.com/iced-rs/iced", rev = "8ff48c42b0d5188223501ea1ccc506fd5beaf36a" }
+iced_wgpu = { git = "https://github.com/iced-rs/iced", rev = "8ff48c42b0d5188223501ea1ccc506fd5beaf36a" }
+iced_runtime = { git = "https://github.com/iced-rs/iced", rev = "8ff48c42b0d5188223501ea1ccc506fd5beaf36a" }
+iced_test = { git = "https://github.com/iced-rs/iced", rev = "8ff48c42b0d5188223501ea1ccc506fd5beaf36a" }
 
 # Coordinate transformations and math
 euclid = { version = "0.22.11", features = ["bytemuck"] }

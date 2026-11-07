@@ -11,16 +11,16 @@
 
 mod common;
 
-use iced::advanced::widget::{Tree, Widget};
-use iced::advanced::{Layout, layout, mouse, renderer};
+use iced::advanced::renderer::Scale;
+use iced::advanced::widget::Widget as _;
+use iced::advanced::{layout, mouse, renderer, shell};
 use iced::widget::Space;
 use iced::{Color, Element, Length, Point, Rectangle, Size};
 use iced_wgpu::Renderer;
-use iced_wgpu::core::clipboard;
 use iced_wgpu::graphics::Viewport;
 
 use common::record::Recorder;
-use common::shared;
+use common::{headless_shell, mount, shared};
 use iced_nodegraph::{
     AnchorStatus, AnchorStyle, Catalog, ColorQuad, CuttingToolStyle, EdgeStatus, EdgeStyle,
     GraphStyle, Ids, Indexed, MinimapStyle, NodeGraph, NodeStatus, NodeStyle, ParticleStyle,
@@ -148,22 +148,19 @@ fn render() -> Option<Vec<[u8; 4]>> {
     graph = graph.push_node(node(
         0_usize,
         Point::ORIGIN,
-        Element::from(Space::new().width(60.0).height(40.0)),
+        Space::new().width(60.0).height(40.0),
     ));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Mono, Renderer>);
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &*renderer,
         &layout::Limits::new(Size::ZERO, Size::new(W as f32, H as f32)),
     );
-    let layout = Layout::new(&layout_node);
     let viewport_rect = Rectangle::new(Point::ORIGIN, Size::new(W as f32, H as f32));
 
     // One update syncs the controlled `camera()` into the widget camera.
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     graph.update(
         &mut tree,
         &iced::Event::Mouse(mouse::Event::CursorMoved {
@@ -172,7 +169,6 @@ fn render() -> Option<Vec<[u8; 4]>> {
         layout,
         mouse::Cursor::Unavailable,
         &*renderer,
-        &mut clipboard,
         &mut shell,
         &viewport_rect,
     );
@@ -190,7 +186,7 @@ fn render() -> Option<Vec<[u8; 4]>> {
     );
 
     let bytes = renderer.screenshot(
-        &Viewport::with_physical_size(Size::new(W, H), 1.0),
+        &Viewport::with_physical_size(Size::new(W, H), Scale::default()),
         Color::TRANSPARENT,
     );
     Some(bytes.as_chunks::<4>().0.to_vec())
@@ -222,7 +218,11 @@ fn foreign_theme_styles_through_its_catalog() {
 /// A graph over a foreign theme converts into that theme's `Element`.
 #[test]
 fn foreign_theme_is_an_element() {
-    let _: Element<'_, (), Mono, Recorder> = NodeGraph::<Indexed, (), Mono, Recorder>::new()
-        .push_node(node(0_usize, Point::ORIGIN, Element::from(Space::new())))
-        .into();
+    let _: Element<'_, (), Mono, Recorder> = iced::Widget::boxed(
+        NodeGraph::<Indexed, (), Mono, Recorder>::new().push_node(node(
+            0_usize,
+            Point::ORIGIN,
+            Space::new(),
+        )),
+    );
 }

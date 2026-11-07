@@ -46,9 +46,9 @@ pub use theme_node::{theme_extended_node, theme_node};
 use std::collections::HashSet;
 
 use iced::{
-    Color, Element, Length, Size, Theme,
+    Color, Element, Length, Size, Theme, Widget,
     alignment::Horizontal,
-    widget::{Row, container, row, text},
+    widget::{Button, Row, container, row, text},
 };
 use iced_nodegraph::{ColorQuad, EdgeCurve, PinShape, TilingKind};
 
@@ -214,6 +214,13 @@ pub enum ConfigNodeType {
 
 /// Mathematical operations for math nodes
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    target_arch = "wasm32",
+    expect(
+        dead_code,
+        reason = "only a restored native session creates these; there is no UI for adding nodes"
+    )
+)]
 pub enum MathOperation {
     Add,
     Subtract,
@@ -268,6 +275,13 @@ pub struct MathNodeState {
 }
 
 impl MathNodeState {
+    #[cfg_attr(
+        target_arch = "wasm32",
+        expect(
+            dead_code,
+            reason = "only a restored native session creates math nodes; there is no UI for adding nodes"
+        )
+    )]
     pub fn new(operation: MathOperation) -> Self {
         Self {
             operation,
@@ -343,6 +357,13 @@ impl AlphaNode {
 
 /// Input node types that produce values
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    target_arch = "wasm32",
+    expect(
+        dead_code,
+        reason = "only a restored native session creates these; there is no UI for adding nodes"
+    )
+)]
 pub enum InputNodeType {
     FloatSlider {
         config: FloatSliderConfig,
@@ -398,6 +419,13 @@ impl InputNodeType {
 
 /// Extended node type for the demo
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(
+    target_arch = "wasm32",
+    expect(
+        dead_code,
+        reason = "only a restored native session creates these; there is no UI for adding nodes"
+    )
+)]
 pub enum NodeType {
     /// Original workflow nodes
     Workflow(String),
@@ -469,7 +497,7 @@ pub fn section_header_with_pins<'a, Message: Clone + 'a>(
     expanded: bool,
     on_toggle: Message,
     collapsed_pins: Option<iced::Element<'a, Message>>,
-) -> iced::widget::Button<'a, Message, Theme, iced::Renderer> {
+) -> Button<'a, Message> {
     use iced::widget::{button, row};
 
     let indicator = if expanded { "-" } else { "+" };
@@ -501,7 +529,7 @@ pub fn section_header_with_pins<'a, Message: Clone + 'a>(
             ]
             .spacing(6)
             .align_y(iced::Alignment::Center)
-            .into()
+            .boxed()
         } else {
             // Collapsed without pins: ──── Label + ────
             row![
@@ -517,7 +545,7 @@ pub fn section_header_with_pins<'a, Message: Clone + 'a>(
             ]
             .spacing(6)
             .align_y(iced::Alignment::Center)
-            .into()
+            .boxed()
         }
     } else {
         // Expanded: ──── Label - ────
@@ -534,7 +562,7 @@ pub fn section_header_with_pins<'a, Message: Clone + 'a>(
         ]
         .spacing(6)
         .align_y(iced::Alignment::Center)
-        .into()
+        .boxed()
     };
 
     button(row_content)
@@ -563,9 +591,7 @@ pub fn section_header_with_pins<'a, Message: Clone + 'a>(
 // ============================================================================
 
 /// Renders an `Option<Color>` as a small colored swatch or "--" placeholder.
-pub fn color_swatch<'a, Message: 'a>(
-    color: Option<Color>,
-) -> Element<'a, Message, Theme, iced::Renderer> {
+pub fn color_swatch<'a, Message: 'a>(color: Option<Color>) -> Element<'a, Message> {
     if let Some(c) = color {
         container(text(""))
             .width(20)
@@ -579,20 +605,18 @@ pub fn color_swatch<'a, Message: 'a>(
                 },
                 ..Default::default()
             })
-            .into()
+            .boxed()
     } else {
-        text("--").size(9).into()
+        text("--").size(9).boxed()
     }
 }
 
 /// Renders a value string right-aligned in a container.
-pub fn value_display<'a, Message: 'a>(
-    display: impl Into<String>,
-) -> Element<'a, Message, Theme, iced::Renderer> {
+pub fn value_display<'a, Message: 'a>(display: impl Into<String>) -> Element<'a, Message> {
     container(text(display.into()).size(9))
         .width(Length::Fill)
         .align_x(Horizontal::Right)
-        .into()
+        .boxed()
 }
 
 /// Formats an optional float for display, or "--" if None.
@@ -605,12 +629,12 @@ pub fn fmt_float(value: Option<f32>, decimals: usize) -> String {
 
 /// Creates a standard pin input row: [pin on left] [display value right-aligned].
 pub fn pin_row<'a, Message: Clone + 'a>(
-    pin_element: impl Into<Element<'a, Message, Theme, iced::Renderer>>,
-    display: impl Into<Element<'a, Message, Theme, iced::Renderer>>,
-) -> Row<'a, Message, Theme, iced::Renderer> {
+    pin_element: impl Widget<Message> + 'a,
+    display: impl Widget<Message> + 'a,
+) -> Row<Element<'a, Message>> {
     row![
-        pin_element.into(),
-        container(display.into())
+        pin_element,
+        container(display)
             .width(Length::Fill)
             .align_x(Horizontal::Right),
     ]
@@ -629,14 +653,14 @@ pub(crate) use collapsed_pin_row;
 
 /// Pushes a collapsible section (header + optional expanded rows) into a content list.
 pub fn push_section<'a, Message: Clone + 'a>(
-    items: &mut Vec<Element<'a, Message, Theme, iced::Renderer>>,
+    items: &mut Vec<Element<'a, Message>>,
     title: &'a str,
     expanded: bool,
     on_toggle: Message,
-    collapsed_pins: Option<Element<'a, Message, Theme, iced::Renderer>>,
-    rows: Vec<Element<'a, Message, Theme, iced::Renderer>>,
+    collapsed_pins: Option<Element<'a, Message>>,
+    rows: Vec<Element<'a, Message>>,
 ) {
-    items.push(section_header_with_pins(title, expanded, on_toggle, collapsed_pins).into());
+    items.push(section_header_with_pins(title, expanded, on_toggle, collapsed_pins).boxed());
     if expanded {
         items.extend(rows);
     }

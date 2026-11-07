@@ -27,9 +27,9 @@ mod native {
     use demo_gallery::SCENES;
     use iced::futures::StreamExt;
     use iced_runtime::core::{
-        self as core, Event, Font, Pixels, Size, clipboard, mouse,
+        self as core, Event, Font, Size, mouse,
         renderer::{self, Headless},
-        window,
+        shell, window,
     };
     use iced_runtime::user_interface::{self, UserInterface};
     use iced_runtime::{Action, task};
@@ -97,8 +97,10 @@ mod native {
         scene.set_theme(iced_theme.clone());
 
         let mut renderer = pollster::block_on(<iced::Renderer as Headless>::new(
-            Font::with_name("Fira Sans"),
-            Pixels(16.0),
+            renderer::Settings {
+                font: Font::new("Fira Sans"),
+                ..renderer::Settings::default()
+            },
             None,
         ))
         .ok_or("no wgpu adapter: install a Vulkan driver (CI: mesa-vulkan-drivers)")?;
@@ -121,14 +123,15 @@ mod native {
             }
         }
 
-        let mut messages = Vec::new();
+        let mut messages = shell::Bus::new();
         let _ = ui.update(
+            &window::Headless,
+            &shell::Waker::noop(),
             &[Event::Window(window::Event::RedrawRequested(
                 core::time::Instant::now(),
             ))],
             mouse::Cursor::Unavailable,
             &mut renderer,
-            &mut clipboard::Null,
             &mut messages,
         );
 
@@ -136,7 +139,7 @@ mod native {
             &mut renderer,
             &iced_theme,
             &renderer::Style {
-                text_color: iced_theme.palette().text,
+                text_color: iced_theme.seed().text,
             },
             mouse::Cursor::Unavailable,
         );
@@ -144,12 +147,8 @@ mod native {
         let physical = Size::new((SIZE.width * SCALE) as u32, (SIZE.height * SCALE) as u32);
         // The wgpu renderer has an inherent `screenshot` taking a `Viewport`;
         // name the trait so the logical-size-plus-scale one is selected.
-        let rgba = Headless::screenshot(
-            &mut renderer,
-            physical,
-            SCALE,
-            iced_theme.palette().background,
-        );
+        let rgba =
+            Headless::screenshot(&mut renderer, physical, SCALE, iced_theme.seed().background);
 
         let path = Path::new(out_dir).join(format!("{}.{theme}.png", def.name));
         write_png(&path, physical, &rgba)?;

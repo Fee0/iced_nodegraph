@@ -4,6 +4,7 @@
 //! Industrial Precision design: compact pills, clear selection state.
 
 use demo_common::NodeContentStyle;
+use iced::Widget;
 use iced::{
     Border, Color, Length,
     alignment::Horizontal,
@@ -70,7 +71,7 @@ where
             snap: false,
         }
     })
-    .into()
+    .boxed()
 }
 
 /// Creates an EdgeCurve selector node with pill buttons
@@ -121,7 +122,7 @@ where
         container(column![pills, output_pin,].spacing(8)).padding([10, 12])
     ]
     .width(160.0)
-    .into()
+    .boxed()
 }
 
 /// Creates a PinShape selector node with pill buttons
@@ -173,7 +174,7 @@ where
         container(column![row1, output_pin,].spacing(8)).padding([10, 12])
     ]
     .width(160.0)
-    .into()
+    .boxed()
 }
 
 /// Creates a TilingKind selector node with pill buttons
@@ -245,7 +246,7 @@ where
             .padding([10, 12])
     ]
     .width(180.0)
-    .into()
+    .boxed()
 }
 
 /// Creates a PatternType selector node with pill buttons
@@ -331,5 +332,5 @@ where
             .padding([10, 12])
     ]
     .width(200.0)
-    .into()
+    .boxed()
 }

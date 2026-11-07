@@ -9,27 +9,20 @@ mod shader_graph;
 use compiler::ShaderCompiler;
 use demo_common::Demo;
 use iced::{
-    Element, Event, Length, Point, Subscription, Task, Theme, Vector, event, keyboard,
-    widget::{column, container, opaque, stack, text},
-    window,
+    Element, Length, Task, Theme, Vector, Widget,
+    widget::{column, container, text},
 };
 use iced_nodegraph::{
     Ids, PinDirection, PinInfo, PinRef, PinSide, PinStatus, PinStyle, default_pin_style,
     edge as ng_edge, node as ng_node, node_pin,
 };
-use iced_palette::{
-    Command, command, command_palette, focus_input, get_filtered_command_index, get_filtered_count,
-    navigate_down, navigate_up,
-};
 use shader_graph::ShaderGraph;
-use shader_graph::nodes::ShaderNodeType;
 use std::collections::HashSet;
 
 pub fn main() -> iced::Result {
     let window_settings = iced::window::Settings::default();
 
     iced::application(Application::boot, Application::update, Application::view)
-        .subscription(Application::subscription)
         .title("Visual Shader Editor - iced_nodegraph")
         .theme(Application::theme)
         .window(window_settings)
@@ -64,25 +57,6 @@ enum Message {
         delta: Vector,
         indices: Vec<usize>,
     },
-    // Command palette messages
-    ToggleCommandPalette,
-    CommandPaletteInput(String),
-    CommandPaletteNavigateUp,
-    CommandPaletteNavigateDown,
-    CommandPaletteNavigate(usize),
-    CommandPaletteSelect(usize),
-    CommandPaletteConfirm,
-    CommandPaletteCancel,
-    // Node spawning
-    SpawnNode(ShaderNodeType),
-    // Theme
-    ChangeTheme(Theme),
-    // Camera/viewport tracking
-    CameraChanged {
-        position: Point,
-        zoom: f32,
-    },
-    WindowResized(iced::Size),
 }
 
 struct Application {
@@ -92,14 +66,6 @@ struct Application {
     visual_edges: Vec<(PinRef<TypedIds>, PinRef<TypedIds>)>,
     current_theme: Theme,
     graph_selection: HashSet<usize>,
-    // Command palette state
-    command_palette_open: bool,
-    command_input: String,
-    palette_selected_index: usize,
-    // Camera/viewport tracking for spawn-at-center
-    viewport_size: iced::Size,
-    camera_position: Point,
-    camera_zoom: f32,
 }
 
 impl demo_common::Demo for Application {
@@ -150,12 +116,6 @@ impl demo_common::Demo for Application {
             visual_edges,
             current_theme: Theme::CatppuccinMocha,
             graph_selection: HashSet::new(),
-            command_palette_open: false,
-            command_input: String::new(),
-            palette_selected_index: 0,
-            viewport_size: iced::Size::new(800.0, 600.0),
-            camera_position: Point::ORIGIN,
-            camera_zoom: 1.0,
         };
 
         app.recompile();
@@ -240,85 +200,6 @@ impl demo_common::Demo for Application {
                     }
                 }
             }
-            // Command palette
-            Message::ToggleCommandPalette => {
-                self.command_palette_open = !self.command_palette_open;
-                if self.command_palette_open {
-                    self.command_input.clear();
-                    self.palette_selected_index = 0;
-                    return focus_input();
-                }
-            }
-            Message::CommandPaletteInput(input) => {
-                self.command_input = input;
-                self.palette_selected_index = 0;
-            }
-            Message::CommandPaletteNavigateUp => {
-                if !self.command_palette_open {
-                    return Task::none();
-                }
-                let commands = self.build_palette_commands();
-                let count = get_filtered_count(&self.command_input, &commands);
-                self.palette_selected_index = navigate_up(self.palette_selected_index, count);
-            }
-            Message::CommandPaletteNavigateDown => {
-                if !self.command_palette_open {
-                    return Task::none();
-                }
-                let commands = self.build_palette_commands();
-                let count = get_filtered_count(&self.command_input, &commands);
-                self.palette_selected_index = navigate_down(self.palette_selected_index, count);
-            }
-            Message::CommandPaletteNavigate(index) => {
-                if !self.command_palette_open {
-                    return Task::none();
-                }
-                self.palette_selected_index = index;
-            }
-            Message::CommandPaletteSelect(index) => {
-                self.palette_selected_index = index;
-                return self.update(Message::CommandPaletteConfirm);
-            }
-            Message::CommandPaletteConfirm => {
-                if !self.command_palette_open {
-                    return Task::none();
-                }
-                let commands = self.build_palette_commands();
-                if let Some(original_idx) = get_filtered_command_index(
-                    &self.command_input,
-                    &commands,
-                    self.palette_selected_index,
-                ) {
-                    use iced_palette::CommandAction;
-                    if let CommandAction::Message(msg) = &commands[original_idx].action {
-                        let msg = msg.clone();
-                        self.command_palette_open = false;
-                        self.command_input.clear();
-                        self.palette_selected_index = 0;
-                        return self.update(msg);
-                    }
-                }
-            }
-            Message::CommandPaletteCancel => {
-                self.command_palette_open = false;
-                self.command_input.clear();
-                self.palette_selected_index = 0;
-            }
-            Message::SpawnNode(node_type) => {
-                // Spawn node at screen center (converted to world coordinates)
-                let position = self.spawn_position();
-                self.shader_graph.add_node(node_type, position);
-            }
-            Message::ChangeTheme(theme) => {
-                self.current_theme = theme;
-            }
-            Message::CameraChanged { position, zoom } => {
-                self.camera_position = position;
-                self.camera_zoom = zoom;
-            }
-            Message::WindowResized(size) => {
-                self.viewport_size = size;
-            }
         }
 
         Task::none()
@@ -330,7 +211,6 @@ impl demo_common::Demo for Application {
             .on_move(|delta, indices| Message::NodesMoved { delta, indices })
             .on_disconnect(|from, to| Message::EdgeDisconnected { from, to })
             .on_select(Message::SelectionChanged)
-            .on_camera(|position, zoom| Message::CameraChanged { position, zoom })
             .nodes(
                 self.shader_graph
                     .nodes
@@ -349,29 +229,7 @@ impl demo_common::Demo for Application {
                     .map(|(from, to)| ng_edge((), *from, *to)),
             );
 
-        let graph_element: Element<Message> = graph.into();
-
-        // Show command palette overlay if open. `opaque` blocks wheel events
-        // from reaching the NodeGraph behind it; the palette's internal
-        // `mouse_area` only captures `on_press`, not scroll.
-        if self.command_palette_open {
-            let commands = self.build_palette_commands();
-            stack![
-                graph_element,
-                opaque(command_palette(
-                    &self.command_input,
-                    &commands,
-                    self.palette_selected_index,
-                    Message::CommandPaletteInput,
-                    Message::CommandPaletteSelect,
-                    Message::CommandPaletteNavigate,
-                    || Message::CommandPaletteCancel,
-                ))
-            ]
-            .into()
-        } else {
-            graph_element
-        }
+        graph.boxed()
     }
 
     fn theme(&self) -> Theme {
@@ -380,45 +238,6 @@ impl demo_common::Demo for Application {
 
     fn set_theme(&mut self, theme: Theme) {
         self.current_theme = theme;
-    }
-
-    fn subscription(&self) -> Subscription<Message> {
-        use iced::keyboard::key::Named;
-
-        Subscription::batch(vec![
-            // Keyboard events for command palette
-            event::listen_with(|event, _status, _id| {
-                if let Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = event {
-                    // Ctrl+Space or Ctrl+Space to toggle palette
-                    if modifiers.command() && key == keyboard::Key::Named(Named::Space) {
-                        return Some(Message::ToggleCommandPalette);
-                    }
-
-                    // When palette is open, handle navigation
-                    match key {
-                        keyboard::Key::Named(Named::ArrowUp) => {
-                            return Some(Message::CommandPaletteNavigateUp);
-                        }
-                        keyboard::Key::Named(Named::ArrowDown) => {
-                            return Some(Message::CommandPaletteNavigateDown);
-                        }
-                        keyboard::Key::Named(Named::Enter) => {
-                            return Some(Message::CommandPaletteConfirm);
-                        }
-                        keyboard::Key::Named(Named::Escape) => {
-                            return Some(Message::CommandPaletteCancel);
-                        }
-                        _ => {}
-                    }
-                }
-                None
-            }),
-            // Window resize events
-            event::listen_with(|event, _, _| match event {
-                Event::Window(window::Event::Resized(size)) => Some(Message::WindowResized(size)),
-                _ => None,
-            }),
-        ])
     }
 }
 
@@ -431,63 +250,6 @@ pub fn scene() -> (
 }
 
 impl Application {
-    /// Calculate spawn position at screen center, converted to world coordinates.
-    fn spawn_position(&self) -> Point {
-        // Screen center
-        let screen_center_x = self.viewport_size.width / 2.0;
-        let screen_center_y = self.viewport_size.height / 2.0;
-
-        // Convert to world coordinates: world = screen / zoom - camera_position
-        let world_x = screen_center_x / self.camera_zoom - self.camera_position.x;
-        let world_y = screen_center_y / self.camera_zoom - self.camera_position.y;
-
-        // Offset for node size (approximate center)
-        Point::new(world_x - 60.0, world_y - 40.0)
-    }
-
-    fn build_palette_commands(&self) -> Vec<Command<Message>> {
-        let mut commands = Vec::new();
-
-        // Add node spawning commands for all shader node types
-        for node_type in ShaderNodeType::all() {
-            let category = node_type.category();
-            commands.push(
-                command(node_type.name(), node_type.name())
-                    .description(format!("{} node", category))
-                    .action(Message::SpawnNode(*node_type)),
-            );
-        }
-
-        // Add theme switching commands
-        commands.push(
-            command("theme-dark", "Dark Theme")
-                .description("Switch to dark theme")
-                .action(Message::ChangeTheme(Theme::Dark)),
-        );
-        commands.push(
-            command("theme-light", "Light Theme")
-                .description("Switch to light theme")
-                .action(Message::ChangeTheme(Theme::Light)),
-        );
-        commands.push(
-            command("theme-catppuccin", "Catppuccin Mocha")
-                .description("Switch to Catppuccin Mocha theme")
-                .action(Message::ChangeTheme(Theme::CatppuccinMocha)),
-        );
-        commands.push(
-            command("theme-dracula", "Dracula")
-                .description("Switch to Dracula theme")
-                .action(Message::ChangeTheme(Theme::Dracula)),
-        );
-        commands.push(
-            command("theme-nord", "Nord")
-                .description("Switch to Nord theme")
-                .action(Message::ChangeTheme(Theme::Nord)),
-        );
-
-        commands
-    }
-
     fn recompile(&mut self) {
         match ShaderCompiler::compile(&self.shader_graph) {
             Ok(shader) => {
@@ -512,7 +274,7 @@ fn create_node_widget<'a>(
     let inputs = node_type.inputs();
     let outputs = node_type.outputs();
 
-    let palette = theme.extended_palette();
+    let palette = theme.palette();
 
     // Title bar - matching hello_world pattern exactly
     let title_bar = container(text(name).size(13).width(Length::Fill))
@@ -570,7 +332,7 @@ fn create_node_widget<'a>(
         container(iced::widget::Column::with_children(pin_elements).spacing(2)).padding([6, 0])
     };
 
-    column![title_bar, pin_section].width(160.0).into()
+    column![title_bar, pin_section].width(160.0).boxed()
 }
 
 /// Colors a node's pins by their socket data-type marker.
@@ -614,18 +376,18 @@ fn create_typed_pin<'a, Message: Clone + 'a>(
         SocketType::Float => node_pin(side, pin_id, content)
             .direction(direction)
             .info(::std::any::TypeId::of::<colors::Float>())
-            .into(),
+            .boxed(),
         SocketType::Vec2 => node_pin(side, pin_id, content)
             .direction(direction)
             .info(::std::any::TypeId::of::<colors::Vec2>())
-            .into(),
+            .boxed(),
         SocketType::Vec3 => node_pin(side, pin_id, content)
             .direction(direction)
             .info(::std::any::TypeId::of::<colors::Vec3>())
-            .into(),
+            .boxed(),
         SocketType::Vec4 => node_pin(side, pin_id, content)
             .direction(direction)
             .info(::std::any::TypeId::of::<colors::Vec4>())
-            .into(),
+            .boxed(),
     }
 }

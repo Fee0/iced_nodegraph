@@ -28,7 +28,7 @@ iced_nodegraph.workspace = true
 # screenshot must be rendered with the same font the canvas uses. `canvas` is
 # the scope scene's screen.
 iced = { workspace = true, features = ["wgpu", "crisp", "thread-pool", "fira-sans", "canvas"] }
-# The `core` re-export supplies `Headless`, `clipboard::Null`, `mouse`, `Event`
+# The `core` re-export supplies `Headless`, `shell`, `window`, `mouse`, `Event`
 # and `renderer::Style` without turning on iced's `advanced` feature.
 iced_runtime.workspace = true
 

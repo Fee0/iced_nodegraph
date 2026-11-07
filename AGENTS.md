@@ -388,11 +388,14 @@ Two behaviours worth knowing before touching `widget/update.rs`:
 
 ## Platform Notes
 
-The libraries build on `iced_widget` / `iced_wgpu` 0.14, never on the `iced`
-umbrella crate: Cargo unifies features additively, so an umbrella dependency
-would force iced's defaults on every downstream application. `iced` is a
-dependency of the demo binaries and of tests/doctests only. See the comment in
-the workspace `Cargo.toml`.
+The libraries build on `iced_widget` / `iced_wgpu` from iced's development
+branch (0.15-dev, a git revision pinned in the workspace `Cargo.toml`), never
+on the `iced` umbrella crate. A git dependency cannot be published to
+crates.io, so a release waits for iced 0.15 on crates.io. The libraries never
+depend on the umbrella crate because Cargo unifies features additively: an
+umbrella dependency would force iced's defaults on every downstream
+application. `iced` is a dependency of the demo binaries and of tests/doctests
+only. See the comment in the workspace `Cargo.toml`.
 
 ### WASM browser compatibility
 

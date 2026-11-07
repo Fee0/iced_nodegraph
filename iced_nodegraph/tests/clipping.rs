@@ -12,16 +12,16 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use iced::advanced::widget::{Tree, Widget};
-use iced::advanced::{Layout, layout, mouse, renderer};
-use iced::{Color, Element, Length, Point, Rectangle, Size, Theme, Vector};
-use iced_wgpu::core::clipboard;
+use iced::advanced::widget::{Meta, Tree, Widget};
+use iced::advanced::{Layout, layout, mouse, renderer, shell};
+use iced::{Color, Length, Point, Rectangle, Size, Theme, Vector};
 
 use iced_nodegraph::{Indexed, NodeGraph, node};
 
 mod common;
 
 use common::record::Recorder;
+use common::{headless_shell, mount};
 
 // ---------------------------------------------------------------------------
 // Leaf child widget that records the viewport it was last drawn / updated with.
@@ -35,17 +35,14 @@ struct ViewportRecorder {
     on_clip: Capture,
 }
 
+impl Meta for ViewportRecorder {}
+
 impl<Message> Widget<Message, Theme, Recorder> for ViewportRecorder {
     fn size(&self) -> Size<Length> {
         Size::new(Length::Fixed(40.0), Length::Fixed(20.0))
     }
-    fn layout(
-        &mut self,
-        _tree: &mut Tree,
-        _renderer: &Recorder,
-        limits: &layout::Limits,
-    ) -> layout::Node {
-        layout::Node::new(limits.resolve(Length::Fixed(40.0), Length::Fixed(20.0), Size::ZERO))
+    fn layout(&mut self, tree: &mut Tree, _renderer: &Recorder, limits: &layout::Limits) {
+        tree.size = layout::atomic(limits, Length::Fixed(40.0), Length::Fixed(20.0));
     }
     fn draw(
         &self,
@@ -53,7 +50,7 @@ impl<Message> Widget<Message, Theme, Recorder> for ViewportRecorder {
         renderer: &mut Recorder,
         _theme: &Theme,
         _style: &renderer::Style,
-        _layout: Layout<'_>,
+        _layout: Layout,
         _cursor: mouse::Cursor,
         viewport: &Rectangle,
     ) {
@@ -64,20 +61,13 @@ impl<Message> Widget<Message, Theme, Recorder> for ViewportRecorder {
         &mut self,
         _tree: &mut Tree,
         _event: &iced::Event,
-        _layout: Layout<'_>,
+        _layout: Layout,
         _cursor: mouse::Cursor,
         _renderer: &Recorder,
-        _clipboard: &mut dyn clipboard::Clipboard,
         _shell: &mut iced_wgpu::core::Shell<'_, Message>,
         viewport: &Rectangle,
     ) {
         self.on_update.0.set(Some(*viewport));
-    }
-}
-
-impl<'a, Message: 'a> From<ViewportRecorder> for Element<'a, Message, Theme, Recorder> {
-    fn from(value: ViewportRecorder) -> Self {
-        Element::new(value)
     }
 }
 
@@ -109,7 +99,7 @@ fn build_graph_with_recorder(
     let mut graph: Graph = NodeGraph::default()
         .width(Length::Fixed(graph_w))
         .height(Length::Fixed(graph_h));
-    graph = graph.push_node(node(0_usize, node_world_pos, Element::from(recorder)));
+    graph = graph.push_node(node(0_usize, node_world_pos, recorder));
     (graph, on_draw, on_update, on_clip)
 }
 
@@ -122,14 +112,12 @@ fn draw_clips_child_viewport_to_graph_bounds() {
     let (mut graph, on_draw, _on_update, _on_clip) =
         build_graph_with_recorder(200.0, 200.0, Point::new(500.0, 500.0));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Recorder>);
     let mut renderer = Recorder::detached();
-    let layout_node = graph.layout(
-        &mut tree,
+    let (tree, layout) = mount(
+        &mut graph,
         &renderer,
         &layout::Limits::new(Size::ZERO, Size::new(1024.0, 768.0)),
     );
-    let layout = Layout::new(&layout_node);
 
     let outer_viewport = Rectangle::new(Point::ORIGIN, Size::new(1024.0, 768.0));
     graph.draw(
@@ -169,14 +157,12 @@ fn draw_clips_node_content_layer_to_graph_bounds() {
     let (mut graph, _on_draw, _on_update, on_clip) =
         build_graph_with_recorder(200.0, 200.0, Point::new(180.0, 50.0));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Recorder>);
     let mut renderer = Recorder::detached();
-    let layout_node = graph.layout(
-        &mut tree,
+    let (tree, layout) = mount(
+        &mut graph,
         &renderer,
         &layout::Limits::new(Size::ZERO, Size::new(1024.0, 768.0)),
     );
-    let layout = Layout::new(&layout_node);
 
     let outer_viewport = Rectangle::new(Point::ORIGIN, Size::new(1024.0, 768.0));
     graph.draw(
@@ -221,28 +207,21 @@ fn run_update_with_cursor(graph_w: f32, graph_h: f32, cursor: mouse::Cursor) -> 
     let mut base_graph: Graph = NodeGraph::default()
         .width(Length::Fixed(graph_w))
         .height(Length::Fixed(graph_h));
-    base_graph = base_graph.push_node(node(
-        0_usize,
-        Point::new(0.0, 0.0),
-        Element::<(), _, _>::from(EmptyLeaf),
-    ));
+    base_graph = base_graph.push_node(node(0_usize, Point::new(0.0, 0.0), EmptyLeaf));
 
     let camera_changed = Rc::new(Cell::new(false));
     let cc = camera_changed.clone();
     let mut graph = base_graph.on_camera(move |_pos, _zoom| cc.set(true));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Recorder>);
     let renderer = Recorder::detached();
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &renderer,
         &layout::Limits::new(Size::ZERO, Size::new(1024.0, 768.0)),
     );
-    let layout = Layout::new(&layout_node);
 
-    let mut messages: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut messages);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     let viewport = Rectangle::new(Point::ORIGIN, Size::new(1024.0, 768.0));
 
     graph.update(
@@ -251,7 +230,6 @@ fn run_update_with_cursor(graph_w: f32, graph_h: f32, cursor: mouse::Cursor) -> 
         layout,
         cursor,
         &renderer,
-        &mut clipboard,
         &mut shell,
         &viewport,
     );
@@ -261,12 +239,13 @@ fn run_update_with_cursor(graph_w: f32, graph_h: f32, cursor: mouse::Cursor) -> 
 
 // Minimal no-op leaf (we only need a node to exist so push_node doesn't panic).
 struct EmptyLeaf;
+impl Meta for EmptyLeaf {}
 impl<Message> Widget<Message, Theme, Recorder> for EmptyLeaf {
     fn size(&self) -> Size<Length> {
         Size::new(Length::Fixed(10.0), Length::Fixed(10.0))
     }
-    fn layout(&mut self, _: &mut Tree, _: &Recorder, limits: &layout::Limits) -> layout::Node {
-        layout::Node::new(limits.resolve(Length::Fixed(10.0), Length::Fixed(10.0), Size::ZERO))
+    fn layout(&mut self, tree: &mut Tree, _: &Recorder, limits: &layout::Limits) {
+        tree.size = layout::atomic(limits, Length::Fixed(10.0), Length::Fixed(10.0));
     }
     fn draw(
         &self,
@@ -274,15 +253,10 @@ impl<Message> Widget<Message, Theme, Recorder> for EmptyLeaf {
         _: &mut Recorder,
         _: &Theme,
         _: &renderer::Style,
-        _: Layout<'_>,
+        _: Layout,
         _: mouse::Cursor,
         _: &Rectangle,
     ) {
-    }
-}
-impl<'a, Message: 'a> From<EmptyLeaf> for Element<'a, Message, Theme, Recorder> {
-    fn from(w: EmptyLeaf) -> Self {
-        Element::new(w)
     }
 }
 
@@ -335,19 +309,16 @@ fn update_clips_child_viewport_to_graph_bounds() {
     let (mut graph, _on_draw, on_update, _on_clip) =
         build_graph_with_recorder(200.0, 200.0, Point::new(500.0, 500.0));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Recorder>);
     let renderer = Recorder::detached();
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &renderer,
         &layout::Limits::new(Size::ZERO, Size::new(1024.0, 768.0)),
     );
-    let layout = Layout::new(&layout_node);
 
     let outer_viewport = Rectangle::new(Point::ORIGIN, Size::new(1024.0, 768.0));
-    let mut shell_messages: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut shell_messages);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     let event = iced::Event::Mouse(mouse::Event::CursorMoved {
         position: Point::new(50.0, 50.0),
     });
@@ -358,7 +329,6 @@ fn update_clips_child_viewport_to_graph_bounds() {
         layout,
         mouse::Cursor::Available(Point::new(50.0, 50.0)),
         &renderer,
-        &mut clipboard,
         &mut shell,
         &outer_viewport,
     );
@@ -388,14 +358,13 @@ fn content_clip_at(widget_origin: Vector, node_world: Point) -> Option<Rectangle
     let (mut graph, _on_draw, _on_update, on_clip) =
         build_graph_with_recorder(200.0, 200.0, node_world);
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Recorder>);
     let mut renderer = Recorder::detached();
-    let layout_node = graph.layout(
-        &mut tree,
+    let (tree, layout) = mount(
+        &mut graph,
         &renderer,
         &layout::Limits::new(Size::ZERO, Size::new(1024.0, 768.0)),
     );
-    let layout = Layout::with_offset(widget_origin, &layout_node);
+    let layout = layout.move_to(Point::ORIGIN + widget_origin);
     let outer = Rectangle::new(Point::ORIGIN, Size::new(1024.0, 768.0));
     graph.draw(
         &tree,

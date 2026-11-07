@@ -4,6 +4,7 @@
 //! of `iced_nodegraph::Node::class`: the target's style is the connected config
 //! layered over the Catalog's node class.
 
+use iced::Widget;
 use std::fmt;
 
 use demo_common::NodeContentStyle;
@@ -55,12 +56,11 @@ where
     );
 
     let selected = target.and_then(|id| candidates.iter().find(|c| &c.id == id).cloned());
-    let picker = pick_list(candidates, selected, move |c: ClassCandidate| {
-        on_target(Some(c.id))
-    })
-    .placeholder("target")
-    .text_size(10)
-    .width(Length::Fill);
+    let picker = pick_list(selected, candidates, ClassCandidate::to_string)
+        .on_select(move |c: ClassCandidate| on_target(Some(c.id)))
+        .placeholder("target")
+        .text_size(10)
+        .width(Length::Fill);
 
     let target_row = row![
         text("target").size(10),
@@ -76,5 +76,5 @@ where
         container(content).padding([8, 10])
     ]
     .width(180.0)
-    .into()
+    .boxed()
 }

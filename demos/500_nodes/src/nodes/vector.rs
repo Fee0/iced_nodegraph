@@ -1,5 +1,5 @@
 use iced::{
-    Length, Theme,
+    Length, Theme, Widget,
     alignment::Horizontal,
     widget::{column, container, row, text},
 };
@@ -57,7 +57,7 @@ where
 
     column![title_bar("Split", theme), container(pins).padding([4, 0])]
         .width(130.0)
-        .into()
+        .boxed()
 }
 
 pub fn vector_combine_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -109,7 +109,7 @@ where
 
     column![title_bar("Combine", theme), container(pins).padding([4, 0])]
         .width(130.0)
-        .into()
+        .boxed()
 }
 
 pub fn normalize_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -143,7 +143,7 @@ where
         container(pins).padding([4, 0])
     ]
     .width(130.0)
-    .into()
+    .boxed()
 }
 
 pub fn dot_product_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -186,7 +186,7 @@ where
 
     column![title_bar("Dot", theme), container(pins).padding([4, 0])]
         .width(130.0)
-        .into()
+        .boxed()
 }
 
 pub fn cross_product_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -229,5 +229,5 @@ where
 
     column![title_bar("Cross", theme), container(pins).padding([4, 0])]
         .width(130.0)
-        .into()
+        .boxed()
 }

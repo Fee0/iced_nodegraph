@@ -499,7 +499,7 @@ pub mod build {
     pub const ALPHA_OUT: &str = "alpha_out";
 }
 
-/// Output pins of the Theme node: the active theme's basic [`iced::theme::Palette`]
+/// Output pins of the Theme node: the active theme's basic [`iced::theme::palette::Seed`]
 /// as colors (the six flat palette entries, no weak/strong steps). The graded
 /// variants live on the Theme Extended node, see [`theme_ext`].
 pub mod theme {
@@ -523,7 +523,7 @@ pub mod theme {
 }
 
 /// Output pins of the Theme Extended node: the active theme's
-/// [`extended_palette`](iced::Theme::extended_palette) as colors. Each accent
+/// [`palette`](iced::Theme::palette) as colors. Each accent
 /// group exposes its `base`/`weak`/`strong` step. Labels are distinct from the
 /// basic [`theme`] module so the two nodes never share a pin id.
 pub mod theme_ext {

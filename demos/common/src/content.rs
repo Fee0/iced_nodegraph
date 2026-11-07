@@ -10,7 +10,7 @@
 
 use iced::{
     Color, Padding, Theme,
-    widget::{Container, container, text},
+    widget::{Container, Text, container, text},
 };
 use iced_nodegraph::node_header;
 
@@ -58,7 +58,7 @@ impl NodeContentStyle {
         const DARK_TINT: f32 = 0.35;
         const LIGHT_TINT: f32 = 0.15;
 
-        let palette = theme.extended_palette();
+        let palette = theme.palette();
         let title_background = if palette.is_dark {
             Color::from_rgba(
                 accent.r * DARK_TINT,
@@ -88,22 +88,22 @@ impl NodeContentStyle {
 
     /// Creates an input node style derived from theme's primary color.
     pub fn input(theme: &Theme) -> Self {
-        Self::from_accent(theme.extended_palette().primary.base.color, theme)
+        Self::from_accent(theme.palette().primary.base.color, theme)
     }
 
     /// Creates a process node style derived from theme's success color.
     pub fn process(theme: &Theme) -> Self {
-        Self::from_accent(theme.extended_palette().success.base.color, theme)
+        Self::from_accent(theme.palette().success.base.color, theme)
     }
 
     /// Creates an output node style derived from theme's secondary color.
     pub fn output(theme: &Theme) -> Self {
-        Self::from_accent(theme.extended_palette().secondary.base.color, theme)
+        Self::from_accent(theme.palette().secondary.base.color, theme)
     }
 
     /// Creates a comment node style from theme's background weak color.
     pub fn comment(theme: &Theme) -> Self {
-        let palette = theme.extended_palette();
+        let palette = theme.palette();
         let weak = palette.background.weak.color;
         let weak_text = palette.background.weak.text;
 
@@ -120,7 +120,7 @@ impl NodeContentStyle {
 
     /// Creates a custom style with the specified accent color.
     pub fn custom(theme: &Theme, accent: Color) -> Self {
-        let palette = theme.extended_palette();
+        let palette = theme.palette();
         let is_dark = palette.is_dark;
 
         if is_dark {
@@ -161,13 +161,10 @@ impl NodeContentStyle {
 ///
 /// Built on the library's [`node_header`], so its rounded top corners match the
 /// silhouette the widget renders behind it.
-pub fn node_title_bar<'a, Message>(
+pub fn node_title_bar<'a>(
     title: impl Into<String>,
     style: NodeContentStyle,
-) -> Container<'a, Message, Theme, iced::Renderer>
-where
-    Message: Clone + 'a,
-{
+) -> Container<'a, Container<'a, Text<'a>>> {
     let title_text = text(title.into()).size(13).color(style.title_text);
 
     node_header(

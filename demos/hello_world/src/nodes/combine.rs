@@ -8,6 +8,7 @@
 //! propagation; the output pin carries the assembled value.
 
 use demo_common::NodeContentStyle;
+use iced::Widget;
 use iced::widget::{column, container, text};
 
 use super::{AlphaNode, ColorQuadNode, Vec2Node};
@@ -64,7 +65,7 @@ where
         container(content).padding([8, 10])
     ]
     .width(150.0)
-    .into()
+    .boxed()
 }
 
 /// Creates a Vec2 builder node: two scalar inputs -> one vector output.
@@ -114,7 +115,7 @@ where
         container(content).padding([8, 10])
     ]
     .width(130.0)
-    .into()
+    .boxed()
 }
 
 /// Creates an Alpha builder node: color + alpha inputs -> one color output.
@@ -167,5 +168,5 @@ where
         container(content).padding([8, 10])
     ]
     .width(150.0)
-    .into()
+    .boxed()
 }

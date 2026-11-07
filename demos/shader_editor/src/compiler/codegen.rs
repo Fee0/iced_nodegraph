@@ -179,9 +179,8 @@ impl CodeGenerator {
             | ShaderNodeType::OutputPin
             | ShaderNodeType::OutputFinal => String::new(),
 
-            // `ShaderNodeType::all()` offers the palette every declared node
-            // type, but only the arms above have a WGSL body. Refuse to compile
-            // rather than emit a function that silently returns zero.
+            // Only the arms above have a WGSL body. Refuse to compile any other
+            // node type rather than emit a function that silently returns zero.
             other => {
                 return Err(CompileError::CodeGeneration(format!(
                     "no WGSL code generator for node type '{}'",

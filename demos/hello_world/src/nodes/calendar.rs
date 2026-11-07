@@ -1,4 +1,5 @@
 use demo_common::NodeContentStyle;
+use iced::Widget;
 use iced::widget::{column, container, text};
 use iced_nodegraph::pin;
 
@@ -41,5 +42,5 @@ where
         container(pin_list).padding([10, 12])
     ]
     .width(180.0)
-    .into()
+    .boxed()
 }

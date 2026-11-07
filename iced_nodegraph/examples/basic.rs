@@ -17,7 +17,7 @@
 //!     cargo run -p iced_nodegraph --example basic
 
 use iced::widget::{checkbox, column, container, slider, text};
-use iced::{Color, Element, Length, Padding, Point, Theme, Vector};
+use iced::{Color, Length, Padding, Point, Theme, Vector, Widget};
 use iced_nodegraph::prelude::*;
 
 fn main() -> iced::Result {
@@ -152,7 +152,7 @@ fn pin_style(
 fn gate<'a>(
     id: usize,
     pos: Point,
-    body: impl Into<Element<'a, Message>>,
+    body: impl Widget<Message> + 'a,
 ) -> Node<'a, LogicIds, Message, iced::Theme, iced::Renderer> {
     node(id, pos, container(body).width(150.0)).pin_style(pin_style)
 }
@@ -163,8 +163,8 @@ fn gate<'a>(
 fn framed<'a>(
     title: &'a str,
     header_bg: Color,
-    body: impl Into<Element<'a, Message>>,
-) -> Element<'a, Message> {
+    body: impl Widget<Message> + 'a,
+) -> impl Widget<Message> + 'a {
     let pad = Padding {
         top: 4.0,
         bottom: 4.0,
@@ -176,7 +176,6 @@ fn framed<'a>(
         container(body).width(Length::Fill).padding(pad),
     ]
     .width(Length::Fill)
-    .into()
 }
 
 impl App {
@@ -224,11 +223,11 @@ impl App {
         }
     }
 
-    fn view(&self) -> Element<'_, Message> {
+    fn view(&self) -> impl Widget<Message> + '_ {
         let theme = self.theme();
         let p = &self.positions;
         // Header colors keyed on node role, derived from the active theme palette.
-        let pal = theme.extended_palette();
+        let pal = theme.palette();
         let input_bg = pal.primary.base.color;
         let process_bg = pal.success.base.color;
         let output_bg = pal.secondary.base.color;
@@ -327,6 +326,5 @@ impl App {
                     ..default_edge_style(theme, status)
                 })
             }))
-            .into()
     }
 }

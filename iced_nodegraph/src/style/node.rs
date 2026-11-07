@@ -68,19 +68,19 @@ impl NodeStyle {
     /// Input node preset: [`default_node_style`] tinted toward the theme's
     /// `primary`. Use it as a style directly: `.style(NodeStyle::input)`.
     pub fn input(theme: &Theme, status: NodeStatus) -> Self {
-        Self::tinted(theme, status, theme.extended_palette().primary.base.color)
+        Self::tinted(theme, status, theme.palette().primary.base.color)
     }
 
     /// Process node preset: [`default_node_style`] tinted toward the theme's
     /// `success`.
     pub fn process(theme: &Theme, status: NodeStatus) -> Self {
-        Self::tinted(theme, status, theme.extended_palette().success.base.color)
+        Self::tinted(theme, status, theme.palette().success.base.color)
     }
 
     /// Output node preset: [`default_node_style`] tinted toward the theme's
     /// `warning`.
     pub fn output(theme: &Theme, status: NodeStatus) -> Self {
-        Self::tinted(theme, status, theme.extended_palette().warning.base.color)
+        Self::tinted(theme, status, theme.palette().warning.base.color)
     }
 
     /// Comment node preset: a translucent body flush with the canvas, a

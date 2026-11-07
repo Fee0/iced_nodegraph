@@ -20,8 +20,9 @@ Output) that compiles successfully on launch.
 
 ## Features
 
-- Command palette (Cmd/Ctrl+Space) to add shader nodes, grouped by category:
-  Input, Math, Vector, Color, SDF, SDF Ops, Logic, and Output.
+- A node vocabulary covering Input, Math, Vector, Color, SDF, SDF Ops,
+  Logic, and Output. The editor has no UI for adding nodes; the graph is the
+  starter graph described above.
 - Typed sockets with TypeId-based connection matching. Socket types are Float,
   Vec2, Vec3, Vec4, Bool, and Int, each drawn in a distinct color. The pin
   system rejects type-mismatched connections.
@@ -30,15 +31,10 @@ Output) that compiles successfully on launch.
     checking, and a required output node).
   - Orders nodes by topological sort.
   - Generates a WGSL fragment shader, prepending the bundled SDF library.
-- Theme switching (Dark, Light, Catppuccin Mocha, Dracula, Nord).
 - Selection, group move, pan, zoom, edge connect, and edge disconnect.
 
 ## Controls
 
-- Cmd/Ctrl+Space - Open or close the command palette.
-- Arrow Up / Arrow Down - Navigate palette entries.
-- Enter - Confirm the selected palette entry.
-- Escape - Cancel the palette.
 - Drag a node - Move it; group selections move together.
 - Drag from a pin - Connect to a compatible (same-type) pin.
 - Click a connected pin - Unplug that connection.
@@ -61,8 +57,8 @@ These are the widget defaults; the root
 
 To add a working node:
 
-1. Add a variant to `ShaderNodeType` in `shader_graph/nodes.rs` and list it in
-   `all()` so it appears in the palette.
+1. Add a variant to `ShaderNodeType` in `shader_graph/nodes.rs` and give it a
+   display name in `name()`.
 2. Define its sockets in `inputs()` and `outputs()`.
 3. Add code generation in `compiler/codegen.rs`.
 
@@ -77,8 +73,8 @@ authoring tool. Current behavior:
 - Code generation covers a subset of the listed node types: the math and vector
   operators, the Circle and Box SDF primitives, and the Union, Subtraction,
   Intersection, and smooth-boolean SDF operations. The remaining enumerated
-  nodes (most SDF primitives, color operations, and logic nodes) appear in the
-  palette, but a graph containing one fails to compile with
+  nodes (most SDF primitives, color operations, and logic nodes) are declared,
+  but a graph containing one fails to compile with
   `CompileError::CodeGeneration` rather than emitting a body that silently
   returns zero. Several also have no defined sockets yet. The starter graph
   uses only handled types, so it still compiles on launch.

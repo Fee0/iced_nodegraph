@@ -3,6 +3,7 @@
 //! Outputs a configurable color value via RGB sliders or presets.
 
 use demo_common::NodeContentStyle;
+use iced::Widget;
 use iced::{
     Color, Length,
     alignment::Horizontal,
@@ -152,7 +153,7 @@ where
         .padding([10, 12])
     ]
     .width(200.0)
-    .into()
+    .boxed()
 }
 
 /// Creates a simpler color picker with preset buttons
@@ -200,7 +201,7 @@ where
                     ..Default::default()
                 })
                 .on_press(on_select(color))
-                .into()
+                .boxed()
         })
         .collect();
 
@@ -222,7 +223,7 @@ where
                     ..Default::default()
                 })
                 .on_press(on_select(color))
-                .into()
+                .boxed()
         })
         .collect();
 
@@ -250,5 +251,5 @@ where
         .padding([10, 12])
     ]
     .width(160.0)
-    .into()
+    .boxed()
 }

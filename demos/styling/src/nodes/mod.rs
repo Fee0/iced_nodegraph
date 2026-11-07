@@ -1,6 +1,6 @@
 use demo_common::{NodeContentStyle, node_title_bar};
 use iced::{
-    Length,
+    Length, Widget,
     alignment::Horizontal,
     widget::{column, container, row, text},
 };
@@ -51,7 +51,7 @@ where
         .padding([8, 10]),
     ]
     .width(160.0)
-    .into()
+    .boxed()
 }
 
 /// Determines the content style based on the node's fill color.

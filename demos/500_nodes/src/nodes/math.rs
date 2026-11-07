@@ -1,5 +1,5 @@
 use iced::{
-    Length, Theme,
+    Length, Theme, Widget,
     alignment::Horizontal,
     widget::{column, container, row, text},
 };
@@ -48,7 +48,7 @@ where
 
     column![title_bar("Add", theme), container(pins).padding([4, 0])]
         .width(130.0)
-        .into()
+        .boxed()
 }
 
 pub fn multiply_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -94,7 +94,7 @@ where
         container(pins).padding([4, 0])
     ]
     .width(130.0)
-    .into()
+    .boxed()
 }
 
 pub fn divide_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -137,7 +137,7 @@ where
 
     column![title_bar("Divide", theme), container(pins).padding([4, 0])]
         .width(130.0)
-        .into()
+        .boxed()
 }
 
 pub fn subtract_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -183,7 +183,7 @@ where
         container(pins).padding([4, 0])
     ]
     .width(130.0)
-    .into()
+    .boxed()
 }
 
 pub fn power_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -226,5 +226,5 @@ where
 
     column![title_bar("Power", theme), container(pins).padding([4, 0])]
         .width(130.0)
-        .into()
+        .boxed()
 }

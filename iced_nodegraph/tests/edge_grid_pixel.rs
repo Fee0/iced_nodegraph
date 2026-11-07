@@ -10,12 +10,12 @@
 
 mod common;
 
-use iced::advanced::widget::{Tree, Widget};
-use iced::advanced::{Layout, layout, mouse, renderer};
-use iced::{Color, Element, Length, Point, Rectangle, Size, Theme};
-use iced_wgpu::core::clipboard;
+use iced::advanced::renderer::Scale;
+use iced::advanced::widget::Widget as _;
+use iced::advanced::{layout, mouse, renderer, shell};
+use iced::{Color, Length, Point, Rectangle, Size, Theme};
 
-use common::shared;
+use common::{headless_shell, mount, shared};
 use iced_wgpu::Renderer;
 use iced_wgpu::graphics::Viewport;
 
@@ -66,18 +66,13 @@ fn render_edge_grid() -> Option<Vec<[u8; 4]>> {
         let (c, r) = ((i % cols) as f32, (i / cols) as f32);
         // Large node body (like the demo's title-bar + multi-pin nodes), so an
         // opaque fill can occlude edges running behind it.
-        let pins = Column::with_children(vec![
-            Element::from(
-                node_pin(PinSide::Right, 0usize, text("o")).direction(PinDirection::Output),
-            ),
-            Element::from(
-                node_pin(PinSide::Left, 1usize, text("i")).direction(PinDirection::Input),
-            ),
+        let pins = Column::with_children([
+            node_pin(PinSide::Right, 0usize, text("o")).direction(PinDirection::Output),
+            node_pin(PinSide::Left, 1usize, text("i")).direction(PinDirection::Input),
         ]);
-        let content: Element<'static, (), Theme, Renderer> = container(pins)
+        let content = container(pins)
             .width(Length::Fixed(70.0))
-            .height(Length::Fixed(60.0))
-            .into();
+            .height(Length::Fixed(60.0));
         graph = graph.push_node(node(i, Point::new(c * sx, r * sy), content));
     }
 
@@ -101,18 +96,15 @@ fn render_edge_grid() -> Option<Vec<[u8; 4]>> {
         );
     }
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Renderer>);
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &*renderer,
         &layout::Limits::new(Size::ZERO, Size::new(GW as f32, GH as f32)),
     );
-    let layout = Layout::new(&layout_node);
     let viewport_rect = Rectangle::new(Point::ORIGIN, Size::new(GW as f32, GH as f32));
 
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     graph.update(
         &mut tree,
         &iced::Event::Mouse(mouse::Event::CursorMoved {
@@ -121,7 +113,6 @@ fn render_edge_grid() -> Option<Vec<[u8; 4]>> {
         layout,
         mouse::Cursor::Unavailable,
         &*renderer,
-        &mut clipboard,
         &mut shell,
         &viewport_rect,
     );
@@ -150,7 +141,7 @@ fn render_edge_grid() -> Option<Vec<[u8; 4]>> {
     );
 
     let bytes = renderer.screenshot(
-        &Viewport::with_physical_size(Size::new(GW, GH), 1.0),
+        &Viewport::with_physical_size(Size::new(GW, GH), Scale::default()),
         Color::TRANSPARENT,
     );
     Some(bytes.as_chunks::<4>().0.to_vec())
@@ -296,18 +287,13 @@ fn render_minimal_edges() -> Option<Vec<[u8; 4]>> {
     for (i, p) in positions.iter().enumerate() {
         // NO text content - to test whether interleaved text rendering triggers the
         // edge blob (the SDF crate and iced_wgpu both render these edges cleanly).
-        let pins = Column::with_children(vec![
-            Element::from(
-                node_pin(PinSide::Right, 0usize, text("o")).direction(PinDirection::Output),
-            ),
-            Element::from(
-                node_pin(PinSide::Left, 1usize, text("i")).direction(PinDirection::Input),
-            ),
+        let pins = Column::with_children([
+            node_pin(PinSide::Right, 0usize, text("o")).direction(PinDirection::Output),
+            node_pin(PinSide::Left, 1usize, text("i")).direction(PinDirection::Input),
         ]);
-        let content: Element<'static, (), Theme, Renderer> = container(pins)
+        let content = container(pins)
             .width(Length::Fixed(70.0))
-            .height(Length::Fixed(60.0))
-            .into();
+            .height(Length::Fixed(60.0));
         graph = graph.push_node(node(i, *p, content));
     }
     // node0 -> node1 (horizontal), node0 -> node3 (diagonal long), node2 -> node1 (diagonal).
@@ -322,18 +308,15 @@ fn render_minimal_edges() -> Option<Vec<[u8; 4]>> {
         );
     }
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Renderer>);
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &*renderer,
         &layout::Limits::new(Size::ZERO, Size::new(GW as f32, GH as f32)),
     );
-    let layout = Layout::new(&layout_node);
     let viewport_rect = Rectangle::new(Point::ORIGIN, Size::new(GW as f32, GH as f32));
 
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     graph.update(
         &mut tree,
         &iced::Event::Mouse(mouse::Event::CursorMoved {
@@ -342,7 +325,6 @@ fn render_minimal_edges() -> Option<Vec<[u8; 4]>> {
         layout,
         mouse::Cursor::Unavailable,
         &*renderer,
-        &mut clipboard,
         &mut shell,
         &viewport_rect,
     );
@@ -358,7 +340,7 @@ fn render_minimal_edges() -> Option<Vec<[u8; 4]>> {
         &viewport_rect,
     );
     let bytes = renderer.screenshot(
-        &Viewport::with_physical_size(Size::new(GW, GH), 1.0),
+        &Viewport::with_physical_size(Size::new(GW, GH), Scale::default()),
         Color::TRANSPARENT,
     );
     Some(bytes.as_chunks::<4>().0.to_vec())

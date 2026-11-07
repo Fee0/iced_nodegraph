@@ -4,6 +4,7 @@
 //! Industrial Precision design: clean pill track, responsive thumb.
 
 use demo_common::NodeContentStyle;
+use iced::Widget;
 use iced::{
     Color, Length,
     alignment::Horizontal,
@@ -133,5 +134,5 @@ where
         container(output_pin).padding([10, 12])
     ]
     .width(180.0)
-    .into()
+    .boxed()
 }

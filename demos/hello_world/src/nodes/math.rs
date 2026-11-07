@@ -5,6 +5,7 @@
 //! Outputs can be chained to other Math nodes or Config nodes.
 
 use demo_common::NodeContentStyle;
+use iced::Widget;
 use iced::{
     Length,
     widget::{Space, column, container, row, text},
@@ -102,5 +103,5 @@ where
         container(column![row_a, row_b].spacing(6)).padding([10, 12 + border_width as u16])
     ]
     .width(160.0)
-    .into()
+    .boxed()
 }

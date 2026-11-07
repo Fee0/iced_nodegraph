@@ -1,5 +1,5 @@
 use iced::{
-    Theme,
+    Theme, Widget,
     widget::{column, container, text},
 };
 use iced_nodegraph::pin;
@@ -25,7 +25,7 @@ where
         container(pins).padding([4, 0])
     ]
     .width(140.0)
-    .into()
+    .boxed()
 }
 
 pub fn roughness_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -46,7 +46,7 @@ where
         container(pins).padding([4, 0])
     ]
     .width(140.0)
-    .into()
+    .boxed()
 }
 
 pub fn metallic_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -67,7 +67,7 @@ where
         container(pins).padding([4, 0])
     ]
     .width(140.0)
-    .into()
+    .boxed()
 }
 
 pub fn emission_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -88,7 +88,7 @@ where
         container(pins).padding([4, 0])
     ]
     .width(140.0)
-    .into()
+    .boxed()
 }
 
 pub fn normal_output_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -106,5 +106,5 @@ where
 
     column![title_bar("Normal", theme), container(pins).padding([4, 0])]
         .width(140.0)
-        .into()
+        .boxed()
 }

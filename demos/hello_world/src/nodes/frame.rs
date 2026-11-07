@@ -5,6 +5,7 @@
 //! uses one frame per Catalog class.
 
 use demo_common::NodeContentStyle;
+use iced::Widget;
 use iced::{
     Length, Size,
     widget::{Space, column, container},
@@ -27,5 +28,5 @@ where
     ])
     .width(size.width)
     .height(size.height)
-    .into()
+    .boxed()
 }

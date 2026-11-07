@@ -860,7 +860,7 @@ impl Pipeline for SdfPipeline {
             &fine_slots_buffer,
         );
 
-        let limit = device.limits().max_storage_buffer_binding_size as u64;
+        let limit = device.limits().max_storage_buffer_binding_size;
         Self {
             shared,
             draw_data_buffer,

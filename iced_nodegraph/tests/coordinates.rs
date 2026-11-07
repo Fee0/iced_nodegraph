@@ -17,13 +17,12 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use iced::advanced::renderer::Renderer as _;
-use iced::advanced::widget::{Tree, Widget};
-use iced::advanced::{Layout, layout, mouse, renderer};
+use iced::advanced::widget::{Meta, Tree, Widget};
+use iced::advanced::{Layout, layout, mouse, renderer, shell};
 use iced::keyboard;
 use iced::touch;
 use iced::widget::Id;
-use iced::{Background, Color, Element, Length, Point, Rectangle, Size, Theme, Vector};
-use iced_wgpu::core::clipboard;
+use iced::{Background, Color, Length, Point, Rectangle, Size, Theme, Vector};
 
 use iced_nodegraph::{
     AnchorStatus, Easing, FocusAnimation, FocusOptions, FocusTarget, Indexed, NodeGraph, PinRef,
@@ -33,6 +32,7 @@ use iced_nodegraph::{
 mod common;
 
 use common::record::{DrawEvent, Recorded, Recorder};
+use common::{headless_shell, mount};
 
 // ---------------------------------------------------------------------------
 // A leaf node-content widget that paints one fill_quad covering its bounds, so
@@ -40,12 +40,14 @@ use common::record::{DrawEvent, Recorded, Recorder};
 // ---------------------------------------------------------------------------
 struct ContentProbe;
 
+impl Meta for ContentProbe {}
+
 impl<Message> Widget<Message, Theme, Recorder> for ContentProbe {
     fn size(&self) -> Size<Length> {
         Size::new(Length::Fixed(40.0), Length::Fixed(20.0))
     }
-    fn layout(&mut self, _: &mut Tree, _: &Recorder, limits: &layout::Limits) -> layout::Node {
-        layout::Node::new(limits.resolve(Length::Fixed(40.0), Length::Fixed(20.0), Size::ZERO))
+    fn layout(&mut self, tree: &mut Tree, _: &Recorder, limits: &layout::Limits) {
+        tree.size = layout::atomic(limits, Length::Fixed(40.0), Length::Fixed(20.0));
     }
     fn draw(
         &self,
@@ -53,7 +55,7 @@ impl<Message> Widget<Message, Theme, Recorder> for ContentProbe {
         renderer: &mut Recorder,
         _: &Theme,
         _: &renderer::Style,
-        layout: Layout<'_>,
+        layout: Layout,
         _: mouse::Cursor,
         _: &Rectangle,
     ) {
@@ -66,12 +68,6 @@ impl<Message> Widget<Message, Theme, Recorder> for ContentProbe {
             },
             Background::Color(Color::BLACK),
         );
-    }
-}
-
-impl<'a, Message: 'a> From<ContentProbe> for Element<'a, Message, Theme, Recorder> {
-    fn from(w: ContentProbe) -> Self {
-        Element::new(w)
     }
 }
 
@@ -92,26 +88,24 @@ fn draw_at_origin(
         .width(Length::Fixed(400.0))
         .height(Length::Fixed(400.0))
         .camera(camera_pos, camera_zoom);
-    graph = graph.push_node(node(0_usize, node_world, Element::from(ContentProbe)));
+    graph = graph.push_node(node(0_usize, node_world, ContentProbe));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Recorder>);
     let out = Rc::new(RefCell::new(Recorded::default()));
     let mut renderer = Recorder::new(out.clone());
 
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &renderer,
         &layout::Limits::new(Size::ZERO, Size::new(1024.0, 768.0)),
     );
     // Simulate the graph sitting at a non-zero origin (e.g. below a toolbar).
-    let layout = Layout::with_offset(widget_origin, &layout_node);
+    let layout = layout.move_to(Point::ORIGIN + widget_origin);
     let viewport = Rectangle::new(Point::ORIGIN, Size::new(1024.0, 768.0));
 
     // One update syncs `camera()` into the widget camera (the host value differs
     // from the unset last-synced value); the event itself is a no-op here.
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     graph.update(
         &mut tree,
         &iced::Event::Mouse(mouse::Event::CursorMoved {
@@ -120,7 +114,6 @@ fn draw_at_origin(
         layout,
         mouse::Cursor::Unavailable,
         &renderer,
-        &mut clipboard,
         &mut shell,
         &viewport,
     );
@@ -190,22 +183,20 @@ fn click_select(
         .on_select(move |ids| {
             *sel.borrow_mut() = Some(ids);
         });
-    graph = graph.push_node(node(0_usize, node_world, Element::from(ContentProbe)));
+    graph = graph.push_node(node(0_usize, node_world, ContentProbe));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Recorder>);
     let out = Rc::new(RefCell::new(Recorded::default()));
     let renderer = Recorder::new(out);
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &renderer,
         &layout::Limits::new(Size::ZERO, Size::new(1024.0, 768.0)),
     );
-    let layout = Layout::with_offset(widget_origin, &layout_node);
+    let layout = layout.move_to(Point::ORIGIN + widget_origin);
     let viewport = Rectangle::new(Point::ORIGIN, Size::new(1024.0, 768.0));
 
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     let cursor = mouse::Cursor::Available(screen);
 
     // First a CursorMoved so the widget syncs `camera()` and tracks the cursor,
@@ -215,14 +206,7 @@ fn click_select(
         iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)),
     ] {
         graph.update(
-            &mut tree,
-            &event,
-            layout,
-            cursor,
-            &renderer,
-            &mut clipboard,
-            &mut shell,
-            &viewport,
+            &mut tree, &event, layout, cursor, &renderer, &mut shell, &viewport,
         );
     }
 
@@ -356,30 +340,23 @@ fn selection_box_primitives(
         .camera(Point::ORIGIN, camera_zoom)
         .on_select(|_ids| {});
     // Node far from the drag so the press opens a selection box, not a node click.
-    graph = graph.push_node(node(
-        0_usize,
-        Point::new(900.0, 900.0),
-        Element::from(ContentProbe),
-    ));
+    graph = graph.push_node(node(0_usize, Point::new(900.0, 900.0), ContentProbe));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Recorder>);
     let out = Rc::new(RefCell::new(Recorded::default()));
     let mut renderer = Recorder::new(out.clone());
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &renderer,
         &layout::Limits::new(Size::ZERO, Size::new(1024.0, 768.0)),
     );
-    let layout = Layout::with_offset(widget_origin, &layout_node);
+    let layout = layout.move_to(Point::ORIGIN + widget_origin);
     let viewport = Rectangle::new(Point::ORIGIN, Size::new(1024.0, 768.0));
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
 
     let send = |graph: &mut Graph<()>,
                 tree: &mut Tree,
-                shell: &mut iced_wgpu::core::Shell<'_, ()>,
-                clipboard: &mut clipboard::Null,
+                shell: &mut shell::Shell<'_, ()>,
                 renderer: &Recorder,
                 event: iced::Event,
                 at: Point| {
@@ -389,7 +366,6 @@ fn selection_box_primitives(
             layout,
             mouse::Cursor::Available(at),
             renderer,
-            clipboard,
             shell,
             &viewport,
         );
@@ -400,7 +376,6 @@ fn selection_box_primitives(
         &mut graph,
         &mut tree,
         &mut shell,
-        &mut clipboard,
         &renderer,
         iced::Event::Mouse(mouse::Event::CursorMoved { position: p1 }),
         p1,
@@ -409,7 +384,6 @@ fn selection_box_primitives(
         &mut graph,
         &mut tree,
         &mut shell,
-        &mut clipboard,
         &renderer,
         iced::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)),
         p1,
@@ -418,7 +392,6 @@ fn selection_box_primitives(
         &mut graph,
         &mut tree,
         &mut shell,
-        &mut clipboard,
         &renderer,
         iced::Event::Mouse(mouse::Event::CursorMoved { position: p2 }),
         p2,
@@ -626,16 +599,14 @@ fn recipe_hash_is_stable_across_120_frames() {
         .into_iter()
         .enumerate()
     {
-        graph = graph.push_node(node(i, Point::new(p.0, p.1), Element::from(ContentProbe)));
+        graph = graph.push_node(node(i, Point::new(p.0, p.1), ContentProbe));
     }
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Recorder>);
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &Recorder::new(Rc::new(RefCell::new(Recorded::default()))),
         &layout::Limits::new(Size::ZERO, Size::new(1024.0, 768.0)),
     );
-    let layout = Layout::with_offset(Vector::ZERO, &layout_node);
     let viewport = Rectangle::new(Point::ORIGIN, Size::new(1024.0, 768.0));
 
     let mut reference: Option<Vec<u32>> = None;
@@ -646,9 +617,8 @@ fn recipe_hash_is_stable_across_120_frames() {
         // A no-op cursor move per frame both syncs `camera()` and lets the widget
         // advance its wall-clock animation time, so `time` genuinely varies
         // across the 120 frames while the geometry must not.
-        let mut msgs: Vec<()> = Vec::new();
-        let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-        let mut clipboard = clipboard::Null;
+        let mut bus = shell::Bus::new();
+        let mut shell = headless_shell::<()>(&mut bus);
         graph.update(
             &mut tree,
             &iced::Event::Mouse(mouse::Event::CursorMoved {
@@ -657,7 +627,6 @@ fn recipe_hash_is_stable_across_120_frames() {
             layout,
             mouse::Cursor::Unavailable,
             &renderer,
-            &mut clipboard,
             &mut shell,
             &viewport,
         );
@@ -720,31 +689,20 @@ fn hosted_content_sandwiched_between_sdf_layers() {
         .width(Length::Fixed(400.0))
         .height(Length::Fixed(400.0))
         .camera(Point::ORIGIN, 1.0);
-    graph = graph.push_node(node(
-        0_usize,
-        Point::new(40.0, 40.0),
-        Element::from(ContentProbe),
-    ));
-    graph = graph.push_node(node(
-        1_usize,
-        Point::new(180.0, 180.0),
-        Element::from(ContentProbe),
-    ));
+    graph = graph.push_node(node(0_usize, Point::new(40.0, 40.0), ContentProbe));
+    graph = graph.push_node(node(1_usize, Point::new(180.0, 180.0), ContentProbe));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Recorder>);
     let out = Rc::new(RefCell::new(Recorded::default()));
     let mut renderer = Recorder::new(out.clone());
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &renderer,
         &layout::Limits::new(Size::ZERO, Size::new(1024.0, 768.0)),
     );
-    let layout = Layout::with_offset(Vector::ZERO, &layout_node);
     let viewport = Rectangle::new(Point::ORIGIN, Size::new(1024.0, 768.0));
 
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     graph.update(
         &mut tree,
         &iced::Event::Mouse(mouse::Event::CursorMoved {
@@ -753,7 +711,6 @@ fn hosted_content_sandwiched_between_sdf_layers() {
         layout,
         mouse::Cursor::Unavailable,
         &renderer,
-        &mut clipboard,
         &mut shell,
         &viewport,
     );
@@ -810,28 +767,15 @@ fn a_frame_draws_behind_every_plain_node() {
         .width(Length::Fixed(400.0))
         .height(Length::Fixed(400.0))
         .camera(Point::ORIGIN, 1.0);
-    graph = graph.push_node(node(
-        0_usize,
-        Point::new(40.0, 40.0),
-        Element::from(ContentProbe),
-    ));
-    graph = graph.push_node(
-        node(
-            1_usize,
-            Point::new(180.0, 180.0),
-            Element::from(ContentProbe),
-        )
-        .frame(),
-    );
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Recorder>);
+    graph = graph.push_node(node(0_usize, Point::new(40.0, 40.0), ContentProbe));
+    graph = graph.push_node(node(1_usize, Point::new(180.0, 180.0), ContentProbe).frame());
     let out = Rc::new(RefCell::new(Recorded::default()));
     let mut renderer = Recorder::new(out.clone());
-    let layout_node = graph.layout(
-        &mut tree,
+    let (tree, layout) = mount(
+        &mut graph,
         &renderer,
         &layout::Limits::new(Size::ZERO, Size::new(1024.0, 768.0)),
     );
-    let layout = Layout::with_offset(Vector::ZERO, &layout_node);
     let viewport = Rectangle::new(Point::ORIGIN, Size::new(1024.0, 768.0));
     graph.draw(
         &tree,
@@ -927,44 +871,29 @@ fn run_events_at<Msg: 'static>(
     events: &[(iced::Event, mouse::Cursor)],
 ) -> Vec<Msg> {
     graph = graph.push_node(
-        node(0_usize, Point::new(10.0, 10.0), Element::from(ContentProbe))
-            .selected(selected.contains(&0)),
+        node(0_usize, Point::new(10.0, 10.0), ContentProbe).selected(selected.contains(&0)),
     );
     graph = graph.push_node(
-        node(
-            1_usize,
-            Point::new(120.0, 10.0),
-            Element::from(ContentProbe),
-        )
-        .selected(selected.contains(&1)),
+        node(1_usize, Point::new(120.0, 10.0), ContentProbe).selected(selected.contains(&1)),
     );
 
-    let mut tree = Tree::new(&graph as &dyn Widget<Msg, Theme, Recorder>);
     let renderer = Recorder::new(Rc::new(RefCell::new(Recorded::default())));
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &renderer,
         &layout::Limits::new(Size::ZERO, Size::new(1024.0, 768.0)),
     );
-    let layout = Layout::with_offset(widget_origin, &layout_node);
+    let layout = layout.move_to(Point::ORIGIN + widget_origin);
     let viewport = Rectangle::new(Point::ORIGIN, Size::new(1024.0, 768.0));
 
-    let mut msgs: Vec<Msg> = Vec::new();
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
     for (event, cursor) in events {
-        let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
+        let mut shell = headless_shell(&mut bus);
         graph.update(
-            &mut tree,
-            event,
-            layout,
-            *cursor,
-            &renderer,
-            &mut clipboard,
-            &mut shell,
-            &viewport,
+            &mut tree, event, layout, *cursor, &renderer, &mut shell, &viewport,
         );
     }
-    msgs
+    bus.into_iter().collect()
 }
 
 #[test]
@@ -1299,30 +1228,26 @@ fn interaction_at(
         .height(Length::Fixed(400.0))
         .on_resize(|_, _| ())
         .camera(camera_pos, camera_zoom);
-    graph = graph
-        .push_node(node(0_usize, Point::ORIGIN, Element::from(ContentProbe)).resizable(resizable));
+    graph = graph.push_node(node(0_usize, Point::ORIGIN, ContentProbe).resizable(resizable));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Recorder>);
     let renderer = Recorder::detached();
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &renderer,
         &layout::Limits::new(Size::ZERO, Size::new(1024.0, 768.0)),
     );
-    let layout = Layout::with_offset(widget_origin, &layout_node);
+    let layout = layout.move_to(Point::ORIGIN + widget_origin);
     let viewport = Rectangle::new(Point::ORIGIN, Size::new(1024.0, 768.0));
 
     // One update syncs `camera()` into the widget camera and its viewport origin.
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     graph.update(
         &mut tree,
         &iced::Event::Mouse(mouse::Event::CursorMoved { position: cursor }),
         layout,
         mouse::Cursor::Available(cursor),
         &renderer,
-        &mut clipboard,
         &mut shell,
         &viewport,
     );
@@ -1474,24 +1399,14 @@ fn focus_operation_commits_once_per_request() {
         .width(Length::Fixed(400.0))
         .height(Length::Fixed(400.0))
         .on_camera(|position, zoom| (position, zoom))
-        .push_node(node(
-            0_usize,
-            Point::new(10.0, 10.0),
-            Element::from(ContentProbe),
-        ))
-        .push_node(node(
-            1_usize,
-            Point::new(120.0, 10.0),
-            Element::from(ContentProbe),
-        ));
-    let mut tree = Tree::new(&graph as &dyn Widget<(Point, f32), Theme, Recorder>);
+        .push_node(node(0_usize, Point::new(10.0, 10.0), ContentProbe))
+        .push_node(node(1_usize, Point::new(120.0, 10.0), ContentProbe));
     let renderer = Recorder::detached();
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &renderer,
         &layout::Limits::new(Size::ZERO, Size::new(1024.0, 768.0)),
     );
-    let layout = Layout::new(&layout_node);
     let viewport = Rectangle::new(Point::ORIGIN, Size::new(1024.0, 768.0));
     let no_op_event = iced::Event::Mouse(mouse::Event::CursorMoved {
         position: Point::ORIGIN,
@@ -1499,21 +1414,22 @@ fn focus_operation_commits_once_per_request() {
     let mut msgs: Vec<(Point, f32)> = Vec::new();
 
     let mut request = focus_operation(Id::new("g"), FocusTarget::<Indexed>::All, options.clone());
-    graph.operate(&mut tree, layout, &renderer, &mut request);
+    graph.operate(&mut tree, layout, &viewport, &renderer, &mut request);
 
     let send = |graph: &mut Graph<(Point, f32)>, tree: &mut Tree, msgs: &mut Vec<(Point, f32)>| {
-        let mut shell = iced_wgpu::core::Shell::new(msgs);
-        let mut clipboard = clipboard::Null;
+        let mut bus = shell::Bus::new();
+        let mut shell = headless_shell(&mut bus);
         graph.update(
             tree,
             &no_op_event,
             layout,
             mouse::Cursor::Unavailable,
             &renderer,
-            &mut clipboard,
             &mut shell,
             &viewport,
         );
+        drop(shell);
+        msgs.extend(bus);
     };
 
     send(&mut graph, &mut tree, &mut msgs);
@@ -1527,7 +1443,7 @@ fn focus_operation_commits_once_per_request() {
     );
 
     let mut request = focus_operation(Id::new("g"), FocusTarget::<Indexed>::All, options);
-    graph.operate(&mut tree, layout, &renderer, &mut request);
+    graph.operate(&mut tree, layout, &viewport, &renderer, &mut request);
     send(&mut graph, &mut tree, &mut msgs);
     assert_eq!(
         msgs.len(),
@@ -1551,47 +1467,29 @@ fn run_events_collecting_redraw<Msg: 'static>(
     options: FocusOptions,
     events: &[(iced::Event, mouse::Cursor)],
 ) -> (Vec<Msg>, Vec<iced::window::RedrawRequest>) {
-    graph = graph.push_node(node(
-        0_usize,
-        Point::new(10.0, 10.0),
-        Element::from(ContentProbe),
-    ));
-    graph = graph.push_node(node(
-        1_usize,
-        Point::new(120.0, 10.0),
-        Element::from(ContentProbe),
-    ));
+    graph = graph.push_node(node(0_usize, Point::new(10.0, 10.0), ContentProbe));
+    graph = graph.push_node(node(1_usize, Point::new(120.0, 10.0), ContentProbe));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<Msg, Theme, Recorder>);
     let renderer = Recorder::detached();
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &renderer,
         &layout::Limits::new(Size::ZERO, Size::new(1024.0, 768.0)),
     );
-    let layout = Layout::new(&layout_node);
     let viewport = Rectangle::new(Point::ORIGIN, Size::new(1024.0, 768.0));
     let mut request = focus_operation(Id::new("g"), target, options);
-    graph.operate(&mut tree, layout, &renderer, &mut request);
+    graph.operate(&mut tree, layout, &viewport, &renderer, &mut request);
 
-    let mut msgs: Vec<Msg> = Vec::new();
+    let mut bus = shell::Bus::new();
     let mut requests = Vec::new();
-    let mut clipboard = clipboard::Null;
     for (event, cursor) in events {
-        let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
+        let mut shell = headless_shell(&mut bus);
         graph.update(
-            &mut tree,
-            event,
-            layout,
-            *cursor,
-            &renderer,
-            &mut clipboard,
-            &mut shell,
-            &viewport,
+            &mut tree, event, layout, *cursor, &renderer, &mut shell, &viewport,
         );
         requests.push(shell.redraw_request());
     }
-    (msgs, requests)
+    (bus.into_iter().collect(), requests)
 }
 
 #[test]
@@ -1658,29 +1556,18 @@ fn tween_converges_under_simulated_iced_redraw_loop() {
         .width(Length::Fixed(400.0))
         .height(Length::Fixed(400.0))
         .on_camera(|position, zoom| (position, zoom));
-    graph = graph.push_node(node(
-        0_usize,
-        Point::new(10.0, 10.0),
-        Element::from(ContentProbe),
-    ));
-    graph = graph.push_node(node(
-        1_usize,
-        Point::new(120.0, 10.0),
-        Element::from(ContentProbe),
-    ));
+    graph = graph.push_node(node(0_usize, Point::new(10.0, 10.0), ContentProbe));
+    graph = graph.push_node(node(1_usize, Point::new(120.0, 10.0), ContentProbe));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(Point, f32), Theme, Recorder>);
     let renderer = Recorder::detached();
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &renderer,
         &layout::Limits::new(Size::ZERO, Size::new(1024.0, 768.0)),
     );
-    let layout = Layout::new(&layout_node);
     let viewport = Rectangle::new(Point::ORIGIN, Size::new(1024.0, 768.0));
     let mut request = focus_operation(Id::new("g"), FocusTarget::<Indexed>::All, options);
-    graph.operate(&mut tree, layout, &renderer, &mut request);
-    let mut clipboard = clipboard::Null;
+    graph.operate(&mut tree, layout, &viewport, &renderer, &mut request);
 
     let mut msgs: Vec<(Point, f32)> = Vec::new();
     let mut frame_at = iced::time::Instant::now();
@@ -1696,18 +1583,20 @@ fn tween_converges_under_simulated_iced_redraw_loop() {
         // capped at 3 passes. The LAST pass's request is the one that counts.
         for _ in 0..3 {
             let before = msgs.len();
-            let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
+            let mut bus = shell::Bus::new();
+            let mut shell = headless_shell(&mut bus);
             graph.update(
                 &mut tree,
                 &event,
                 layout,
                 mouse::Cursor::Unavailable,
                 &renderer,
-                &mut clipboard,
                 &mut shell,
                 &viewport,
             );
             scheduled_next_frame = shell.redraw_request() == iced::window::RedrawRequest::NextFrame;
+            drop(shell);
+            msgs.extend(bus);
             if msgs.len() == before {
                 break;
             }
@@ -1826,22 +1715,19 @@ fn committed_fit(
     mut graph: Graph<(Point, f32)>,
     target: FocusTarget<Indexed>,
 ) -> Option<(Point, f32)> {
-    let mut tree = Tree::new(&graph as &dyn Widget<(Point, f32), Theme, Recorder>);
     let renderer = Recorder::detached();
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &renderer,
         &layout::Limits::new(Size::ZERO, Size::new(1024.0, 768.0)),
     );
-    let layout = Layout::new(&layout_node);
     let viewport = Rectangle::new(Point::ORIGIN, Size::new(1024.0, 768.0));
 
     let mut request = focus_operation(Id::new("g"), target, jump());
-    graph.operate(&mut tree, layout, &renderer, &mut request);
+    graph.operate(&mut tree, layout, &viewport, &renderer, &mut request);
 
-    let mut msgs: Vec<(Point, f32)> = Vec::new();
-    let mut clipboard = clipboard::Null;
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<(Point, f32)>(&mut bus);
     graph.update(
         &mut tree,
         &iced::Event::Mouse(mouse::Event::CursorMoved {
@@ -1850,12 +1736,11 @@ fn committed_fit(
         layout,
         mouse::Cursor::Unavailable,
         &renderer,
-        &mut clipboard,
         &mut shell,
         &viewport,
     );
     drop(shell);
-    msgs.into_iter().next()
+    bus.into_iter().next()
 }
 
 /// An empty graph carrying the id the focus operations address, reporting
@@ -1872,12 +1757,8 @@ fn focusable() -> Graph<(Point, f32)> {
 /// without extra content can be compared.
 fn focusable_with_nodes() -> Graph<(Point, f32)> {
     focusable()
-        .push_node(node(0, Point::new(10.0, 10.0), Element::from(ContentProbe)))
-        .push_node(node(
-            1,
-            Point::new(120.0, 10.0),
-            Element::from(ContentProbe),
-        ))
+        .push_node(node(0, Point::new(10.0, 10.0), ContentProbe))
+        .push_node(node(1, Point::new(120.0, 10.0), ContentProbe))
 }
 
 fn assert_same_fit(fit: (Point, f32), expected: (Point, f32), what: &str) {
@@ -1952,8 +1833,8 @@ fn focusing_a_routed_cable_frames_its_anchor() {
     // nodes, so framing the endpoints alone leaves the cable's whole detour off
     // screen.
     let graph = focusable()
-        .push_node(node(0, FIT_NODE_A, Element::from(ContentProbe)))
-        .push_node(node(1, FIT_NODE_B, Element::from(ContentProbe)))
+        .push_node(node(0, FIT_NODE_A, ContentProbe))
+        .push_node(node(1, FIT_NODE_B, ContentProbe))
         .push_anchor(anchor(ANCHOR_ID, ANCHOR_AT))
         .push_edge(edge((), PinRef::new(0, 0), PinRef::new(1, 0)).route([ANCHOR_ID]));
     let fit = committed_fit(graph, FocusTarget::Edge(())).expect("a routed edge must resolve");
@@ -1988,47 +1869,36 @@ fn graph_info_is_delivered_one_frame_behind() {
         .width(Length::Fixed(400.0))
         .height(Length::Fixed(400.0))
         .on_info(|info| info);
-    graph = graph.push_node(node(
-        0_usize,
-        Point::new(10.0, 10.0),
-        Element::from(ContentProbe),
-    ));
-    graph = graph.push_node(node(
-        1_usize,
-        Point::new(5000.0, 5000.0),
-        Element::from(ContentProbe),
-    ));
+    graph = graph.push_node(node(0_usize, Point::new(10.0, 10.0), ContentProbe));
+    graph = graph.push_node(node(1_usize, Point::new(5000.0, 5000.0), ContentProbe));
     graph = graph.push_edge(edge((), PinRef::new(0, 0), PinRef::new(1, 0)));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<GraphInfo, Theme, Recorder>);
     let mut renderer = Recorder::new(Rc::new(RefCell::new(Recorded::default())));
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &renderer,
         &layout::Limits::new(Size::ZERO, Size::new(1024.0, 768.0)),
     );
-    let layout = Layout::with_offset(Vector::ZERO, &layout_node);
     let viewport = Rectangle::new(Point::ORIGIN, Size::new(1024.0, 768.0));
-    let mut clipboard = clipboard::Null;
     let redraw = || {
         iced::Event::Window(iced::window::Event::RedrawRequested(
             iced::time::Instant::now(),
         ))
     };
-    let mut tick = |graph: &mut Graph<GraphInfo>, tree: &mut Tree, renderer: &Recorder| {
-        let mut msgs: Vec<GraphInfo> = Vec::new();
-        let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
+    let tick = |graph: &mut Graph<GraphInfo>, tree: &mut Tree, renderer: &Recorder| {
+        let mut bus = shell::Bus::new();
+        let mut shell = headless_shell::<GraphInfo>(&mut bus);
         graph.update(
             tree,
             &redraw(),
             layout,
             mouse::Cursor::Unavailable,
             renderer,
-            &mut clipboard,
             &mut shell,
             &viewport,
         );
-        msgs
+        drop(shell);
+        bus.into_iter().collect::<Vec<_>>()
     };
 
     assert!(

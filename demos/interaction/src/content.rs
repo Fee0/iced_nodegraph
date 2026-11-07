@@ -5,7 +5,7 @@
 
 use demo_common::NodeContentStyle;
 use iced::{
-    Element, Length, Padding, Theme,
+    Element, Length, Padding, Theme, Widget,
     widget::{column, container, text},
 };
 use iced_nodegraph::node_header;
@@ -21,8 +21,8 @@ use iced_nodegraph::node_header;
 pub fn simple_node<'a, Message>(
     title: impl Into<String>,
     style: NodeContentStyle,
-    content: impl Into<Element<'a, Message, Theme, iced::Renderer>>,
-) -> Element<'a, Message, Theme, iced::Renderer>
+    content: impl Widget<Message> + 'a,
+) -> Element<'a, Message>
 where
     Message: Clone + 'a,
 {
@@ -61,5 +61,5 @@ where
             })
     ]
     .width(Length::Fill)
-    .into()
+    .boxed()
 }

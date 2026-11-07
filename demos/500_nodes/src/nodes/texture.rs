@@ -1,5 +1,5 @@
 use iced::{
-    Length, Theme,
+    Length, Theme, Widget,
     alignment::Horizontal,
     widget::{column, container, row, text},
 };
@@ -36,7 +36,7 @@ where
 
     column![title_bar("Texture", theme), container(pins).padding([4, 0])]
         .width(130.0)
-        .into()
+        .boxed()
 }
 
 pub fn color_mix_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -79,7 +79,7 @@ where
 
     column![title_bar("Mix", theme), container(pins).padding([4, 0])]
         .width(130.0)
-        .into()
+        .boxed()
 }
 
 pub fn gradient_node<'a, Message>(theme: &'a Theme) -> iced::Element<'a, Message>
@@ -113,5 +113,5 @@ where
         container(pins).padding([4, 0])
     ]
     .width(130.0)
-    .into()
+    .boxed()
 }

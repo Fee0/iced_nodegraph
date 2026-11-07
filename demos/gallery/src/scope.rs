@@ -24,7 +24,7 @@ use iced::widget::canvas::{self, Canvas, Frame, Geometry, Path, Stroke};
 use iced::widget::{column, container, row, slider, text};
 use iced::{
     Alignment, Color, Element, Event, Length, Padding, Point, Rectangle, Renderer, Subscription,
-    Task, Theme, Vector, event, mouse, widget, window,
+    Task, Theme, Vector, Widget, event, mouse, widget, window,
 };
 use iced_nodegraph::connection::default_can_connect;
 use iced_nodegraph::prelude::*;
@@ -45,7 +45,7 @@ impl Port {
     /// The pin and wire colour of this port, from the theme so the scene
     /// follows the page it is embedded in.
     fn color(self, theme: &Theme) -> Color {
-        let palette = theme.palette();
+        let palette = theme.seed();
         match self {
             Port::Signal => palette.primary,
             Port::Number => palette.warning,
@@ -350,7 +350,7 @@ impl Demo for Scope {
                     ..default_edge_style(theme, status)
                 })
             }))
-            .into()
+            .boxed()
     }
 
     fn theme(&self) -> Theme {
@@ -393,11 +393,11 @@ fn unit<'a>(
     title: &'a str,
     style: NodeContentStyle,
     width: f32,
-    body: impl Into<Element<'a, Message>>,
+    body: impl Widget<Message> + 'a,
 ) -> Node<'a, ScopeIds, Message, Theme, Renderer> {
     let content = column![
         node_title_bar(title, style),
-        container(column![body.into()].spacing(6)).padding(Padding {
+        container(column![body].spacing(6)).padding(Padding {
             top: 6.0,
             bottom: 8.0,
             left: 10.0,
@@ -410,7 +410,7 @@ fn unit<'a>(
 }
 
 fn label<'a>(name: &'a str) -> Element<'a, Message> {
-    text(name).size(11).into()
+    text(name).size(11).boxed()
 }
 
 /// The signal output every oscillator ends in.
@@ -422,7 +422,7 @@ fn output<'a>() -> Element<'a, Message> {
         Output,
         Port::Signal
     )
-    .into()
+    .boxed()
 }
 
 /// An integer slider with its value printed beside it.
@@ -438,7 +438,7 @@ fn knob<'a>(
     ]
     .spacing(8)
     .align_y(Alignment::Center)
-    .into()
+    .boxed()
 }
 
 /// The scope screen: the waves wired into X and Y, as the canvas draws them.
@@ -478,7 +478,7 @@ impl<Message> canvas::Program<Message> for Trace {
     ) -> Vec<Geometry> {
         const DIVISIONS: usize = 8;
 
-        let palette = theme.palette();
+        let palette = theme.seed();
         let mut frame = Frame::new(renderer, bounds.size());
         let size = frame.width().min(frame.height());
         let origin = Point::new((frame.width() - size) / 2.0, (frame.height() - size) / 2.0);

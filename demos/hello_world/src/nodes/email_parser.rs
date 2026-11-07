@@ -1,4 +1,5 @@
 use demo_common::NodeContentStyle;
+use iced::Widget;
 use iced::{
     Length,
     alignment::Horizontal,
@@ -66,5 +67,5 @@ where
         container(pin_list).padding([10, 12])
     ]
     .width(200.0)
-    .into()
+    .boxed()
 }

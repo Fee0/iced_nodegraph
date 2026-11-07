@@ -5,6 +5,7 @@
 //! the quad), and the shadow offset is a single 2D vector pin.
 
 use demo_common::NodeContentStyle;
+use iced::Widget;
 use iced::{
     Length,
     widget::{column, container, row, text},
@@ -242,7 +243,7 @@ where
     ]
     .align_y(iced::Alignment::Center);
 
-    let mut items: Vec<iced::Element<'_, Message>> = vec![config_row.into()];
+    let mut items: Vec<iced::Element<'_, Message>> = vec![config_row.boxed()];
 
     // Precompute display values
     let thickness = result.pattern.map(|p| p.thickness);
@@ -283,7 +284,7 @@ where
                 (pins::edge::GLOW_COLOR, pins::ColorData),
                 (pins::edge::GLOW_WIDTH, pins::Float)
             ]
-            .into()
+            .boxed()
         }),
         vec![
             pin_row(
@@ -296,7 +297,7 @@ where
                 ),
                 color_swatch(result.stroke_color.map(|q| q.near_start)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -307,7 +308,7 @@ where
                 ),
                 value_display(fmt_float(thickness, 1)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -318,7 +319,7 @@ where
                 ),
                 value_display(curve_label),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -329,7 +330,7 @@ where
                 ),
                 value_display(fmt_float(inputs.stroke_outline_width, 1)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -340,7 +341,7 @@ where
                 ),
                 color_swatch(inputs.stroke_outline_color.map(|q| q.near_start)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -351,7 +352,7 @@ where
                 ),
                 color_swatch(inputs.glow_color.map(|q| q.near_start)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -362,7 +363,7 @@ where
                 ),
                 value_display(fmt_float(inputs.glow_width, 1)),
             )
-            .into(),
+            .boxed(),
         ],
     );
 
@@ -381,7 +382,7 @@ where
                 (pins::edge::ANGLE, pins::Float),
                 (pins::edge::SPEED, pins::Float)
             ]
-            .into()
+            .boxed()
         }),
         vec![
             pin_row(
@@ -394,7 +395,7 @@ where
                 ),
                 value_display(pattern_label),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -405,7 +406,7 @@ where
                 ),
                 value_display(fmt_float(inputs.dash_length, 1)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -416,7 +417,7 @@ where
                 ),
                 value_display(fmt_float(inputs.gap_length, 1)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -427,7 +428,7 @@ where
                 ),
                 value_display(fmt_float(inputs.dot_radius, 1)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -438,7 +439,7 @@ where
                 ),
                 value_display(angle_display),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -449,7 +450,7 @@ where
                 ),
                 value_display(fmt_float(inputs.animation_speed, 0)),
             )
-            .into(),
+            .boxed(),
         ],
     );
 
@@ -468,7 +469,7 @@ where
                 (pins::edge::BORDER_OUTLINE_WIDTH, pins::Float),
                 (pins::edge::BORDER_OUTLINE_COLOR, pins::ColorData)
             ]
-            .into()
+            .boxed()
         }),
         vec![
             pin_row(
@@ -481,7 +482,7 @@ where
                 ),
                 value_display(fmt_float(inputs.border_width, 1)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -492,7 +493,7 @@ where
                 ),
                 value_display(fmt_float(inputs.border_gap, 1)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -503,7 +504,7 @@ where
                 ),
                 color_swatch(inputs.border_color.map(|q| q.near_start)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -514,7 +515,7 @@ where
                 ),
                 color_swatch(inputs.border_background.map(|q| q.near_start)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -525,7 +526,7 @@ where
                 ),
                 value_display(fmt_float(inputs.border_outline_width, 1)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -536,7 +537,7 @@ where
                 ),
                 color_swatch(inputs.border_outline_color.map(|q| q.near_start)),
             )
-            .into(),
+            .boxed(),
         ],
     );
 
@@ -553,7 +554,7 @@ where
                 (pins::edge::SHADOW_COLOR, pins::ColorData),
                 (pins::edge::SHADOW_OFFSET, pins::Vec2Data)
             ]
-            .into()
+            .boxed()
         }),
         vec![
             pin_row(
@@ -566,7 +567,7 @@ where
                 ),
                 value_display(fmt_float(inputs.shadow_blur, 1)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -577,7 +578,7 @@ where
                 ),
                 value_display(fmt_float(inputs.shadow_expand, 1)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -588,7 +589,7 @@ where
                 ),
                 color_swatch(inputs.shadow_color.map(|q| q.near_start)),
             )
-            .into(),
+            .boxed(),
             pin_row(
                 pin!(
                     Left,
@@ -599,7 +600,7 @@ where
                 ),
                 value_display(offset_display),
             )
-            .into(),
+            .boxed(),
         ],
     );
 
@@ -610,5 +611,5 @@ where
         container(content).padding([8, 10])
     ]
     .width(150.0)
-    .into()
+    .boxed()
 }

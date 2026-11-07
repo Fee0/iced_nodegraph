@@ -8,6 +8,7 @@
 //! is taken, since the canvas fields are plain `Color`).
 
 use demo_common::NodeContentStyle;
+use iced::Widget;
 use iced::{
     Length,
     widget::{column, container, row, text},
@@ -155,5 +156,5 @@ where
         container(content).padding([8, 10])
     ]
     .width(170.0)
-    .into()
+    .boxed()
 }

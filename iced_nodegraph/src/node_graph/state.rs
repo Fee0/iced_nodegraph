@@ -318,7 +318,7 @@ impl NodeGraphState {
     /// only pan and zoom; the widget's screen position is a layout fact that
     /// changes without any interaction, so it is folded in per frame rather
     /// than kept in state.
-    pub(super) fn camera_for(&self, layout: Layout<'_>) -> Camera2D {
+    pub(super) fn camera_for(&self, layout: Layout) -> Camera2D {
         self.camera
             .with_viewport_origin(layout.bounds().position().into_euclid().to_vector())
     }

@@ -20,7 +20,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use iced::advanced::renderer;
-use iced::{Background, Color, Pixels, Point, Rectangle, Transformation};
+use iced::{Background, Color, Point, Rectangle, Transformation};
 use iced_wgpu::core::image;
 use iced_wgpu::core::text;
 
@@ -106,15 +106,21 @@ impl renderer::Renderer for Recorder {
         out.events.push(DrawEvent::Content(abs));
     }
     fn allocate_image(
-        &mut self,
+        &self,
         _handle: &image::Handle,
         _callback: impl FnOnce(Result<image::Allocation, image::Error>) + Send + 'static,
     ) {
     }
+    fn hint(&mut self, _scale: renderer::Scale) {}
+    fn scale(&self) -> Option<renderer::Scale> {
+        None
+    }
+    fn settings(&self) -> renderer::Settings {
+        renderer::Settings::default()
+    }
 }
 
 impl text::Renderer for Recorder {
-    type Font = iced::Font;
     // Real (GPU-free) types: iced_core's `()` impls are debug_assertions-gated
     // and break release test builds; these tests never lay out text.
     type Paragraph = iced_wgpu::graphics::text::Paragraph;
@@ -129,12 +135,6 @@ impl text::Renderer for Recorder {
     const SCROLL_RIGHT_ICON: char = '0';
     const ICED_LOGO: char = '0';
 
-    fn default_font(&self) -> Self::Font {
-        iced::Font::default()
-    }
-    fn default_size(&self) -> Pixels {
-        Pixels(16.0)
-    }
     fn fill_paragraph(&mut self, _: &Self::Paragraph, _: Point, _: Color, _: Rectangle) {}
     fn fill_editor(&mut self, _: &Self::Editor, _: Point, _: Color, _: Rectangle) {}
     fn fill_text(&mut self, _: text::Text, _: Point, _: Color, _: Rectangle) {}

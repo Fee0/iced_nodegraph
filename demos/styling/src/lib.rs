@@ -5,7 +5,7 @@ mod nodes;
 
 use demo_common::{Demo, NodeContentStyle, node_title_bar};
 use iced::{
-    Element, Length, Point, Rectangle, Size, Task, Theme, Vector,
+    Element, Length, Point, Rectangle, Size, Task, Theme, Vector, Widget,
     widget::{Space, button, column, container, opaque, pick_list, row, slider, stack, text},
 };
 use iced_nodegraph::{
@@ -455,7 +455,7 @@ impl Demo for Application {
                     .height(Length::Fill)
                     .padding(15)
                     .style(|theme: &Theme| {
-                        let palette = theme.extended_palette();
+                        let palette = theme.palette();
                         container::Style {
                             background: Some(palette.background.weak.color.into()),
                             ..Default::default()
@@ -466,7 +466,7 @@ impl Demo for Application {
             .height(Length::Fill)
             .align_x(iced::alignment::Horizontal::Right),
         ]
-        .into()
+        .boxed()
     }
 }
 
@@ -511,7 +511,7 @@ impl Application {
 
     fn build_control_panel(&self) -> Element<'_, Message> {
         let theme = &self.current_theme;
-        let palette = theme.extended_palette();
+        let palette = theme.palette();
         let text_color = palette.background.base.text;
 
         let title = text("Style Controls").size(18).color(text_color);
@@ -526,7 +526,7 @@ impl Application {
         };
 
         // Node selection buttons
-        let node_buttons: Element<'_, Message> = column(
+        let node_buttons = column(
             self.nodes
                 .iter()
                 .enumerate()
@@ -542,12 +542,10 @@ impl Application {
                             }
                         })
                         .width(Length::Fill)
-                        .into()
                 })
                 .collect::<Vec<_>>(),
         )
-        .spacing(5)
-        .into();
+        .spacing(5);
 
         // Style sliders, driving the selected node's overrides
         let overrides = self.selected_overrides();
@@ -598,18 +596,13 @@ impl Application {
 
         // Preset buttons
         let preset_label = text("Apply Preset").size(12).color(text_color);
-        let preset_buttons: Element<'_, Message> = row(NodePreset::ALL
-            .iter()
-            .map(|preset| {
-                button(text(preset.to_string()).size(11))
-                    .on_press(Message::ApplyPreset(*preset))
-                    .padding([4, 8])
-                    .into()
-            })
-            .collect::<Vec<_>>())
+        let preset_buttons = row(NodePreset::ALL.iter().map(|preset| {
+            button(text(preset.to_string()).size(11))
+                .on_press(Message::ApplyPreset(*preset))
+                .padding([4, 8])
+        }))
         .spacing(5)
-        .wrap()
-        .into();
+        .wrap();
 
         // Theme selector
         let theme_label = text("Theme").size(12).color(text_color);
@@ -625,12 +618,9 @@ impl Application {
             Theme::GruvboxDark,
             Theme::GruvboxLight,
         ];
-        let theme_picker = pick_list(
-            themes,
-            Some(self.current_theme.clone()),
-            Message::ChangeTheme,
-        )
-        .width(Length::Fill);
+        let theme_picker = pick_list(Some(self.current_theme.clone()), themes, Theme::to_string)
+            .on_select(Message::ChangeTheme)
+            .width(Length::Fill);
 
         column![
             title,
@@ -653,7 +643,7 @@ impl Application {
             theme_picker,
         ]
         .spacing(5)
-        .into()
+        .boxed()
     }
 
     fn build_graph(&self) -> Element<'_, Message> {
@@ -674,7 +664,7 @@ impl Application {
             .on_drag_end(|| Message::DragEnded)
             .on_resize(|_, size| Message::FrameResized(size))
             .graph_style(|theme: &Theme| {
-                let line = theme.extended_palette().background.strong.color;
+                let line = theme.palette().background.strong.color;
                 GraphStyle {
                     tiling: Some(TilingBackground::grid(
                         40.0,
@@ -714,7 +704,7 @@ impl Application {
             .edges(self.edges.iter().map(|model| {
                 edge(model.id, model.from, model.to).route(model.route.iter().copied())
             }))
-            .into()
+            .boxed()
     }
 
     /// The frame's own content: a title bar over an empty body, laid out at the
@@ -726,6 +716,6 @@ impl Application {
         ])
         .width(self.frame.width)
         .height(self.frame.height)
-        .into()
+        .boxed()
     }
 }

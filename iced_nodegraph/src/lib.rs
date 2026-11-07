@@ -28,9 +28,8 @@
 //!
 //! ```rust,no_run
 //! use iced_nodegraph::{PinRef, edge, node, node_graph};
-//! use iced::{Element, Theme, Point, Vector};
+//! use iced::{Point, Vector, Widget};
 //! use iced::widget::text;
-//! use iced_wgpu::Renderer;
 //!
 //! #[derive(Debug, Clone)]
 //! enum Message {
@@ -38,14 +37,13 @@
 //!     NodesMoved { delta: Vector, node_ids: Vec<usize> },
 //! }
 //!
-//! fn view(edges: &[(PinRef, PinRef)]) -> Element<'_, Message, Theme, Renderer> {
+//! fn view(edges: &[(PinRef, PinRef)]) -> impl Widget<Message> + '_ {
 //!     node_graph()
 //!         .on_connect(|from, to| Message::EdgeConnected { from, to })
 //!         .on_move(|delta, node_ids| Message::NodesMoved { delta, node_ids })
 //!         .push_node(node(0, Point::new(100.0, 100.0), text("Node A")))
 //!         .push_node(node(1, Point::new(300.0, 100.0), text("Node B")))
 //!         .edges(edges.iter().map(|(from, to)| edge((), *from, *to)))
-//!         .into()
 //! }
 //! ```
 //!
@@ -60,7 +58,7 @@
 //!
 //! ```rust,no_run
 //! use iced_nodegraph::{Ids, NodeGraph, PinRef, node};
-//! use iced::{Element, Point};
+//! use iced::{Point, Widget};
 //! use iced::widget::text;
 //!
 //! #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -79,11 +77,10 @@
 //!     Connected(PinRef<AppIds>, PinRef<AppIds>),
 //! }
 //!
-//! fn view() -> Element<'static, Message> {
+//! fn view() -> impl Widget<Message> {
 //!     NodeGraph::<AppIds, _, _, _>::new()
 //!         .on_connect(Message::Connected)
 //!         .push_node(node(7, Point::ORIGIN, text("seven")))
-//!         .into()
 //! }
 //! ```
 //!

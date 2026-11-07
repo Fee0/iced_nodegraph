@@ -4,6 +4,7 @@
 //! Supports expandable options for configuring min/max.
 
 use demo_common::NodeContentStyle;
+use iced::Widget;
 use iced::{
     Color, Length,
     alignment::Horizontal,
@@ -164,9 +165,9 @@ where
             column![min_slider, max_slider].spacing(4)
         ]
         .spacing(8)
-        .into()
+        .boxed()
     } else {
-        main_content.into()
+        main_content.boxed()
     };
 
     // Footer background
@@ -184,7 +185,7 @@ where
         )
     ]
     .width(200.0)
-    .into()
+    .boxed()
 }
 
 /// Slider style for the config sliders (smaller, more subtle)

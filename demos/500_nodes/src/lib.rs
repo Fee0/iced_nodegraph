@@ -7,7 +7,7 @@ mod nodes;
 use demo_common::Demo;
 use graph::generate_procedural_graph;
 use iced::{
-    Color, Element, Length, Point, Rectangle, Subscription, Task, Theme, Vector, mouse,
+    Color, Element, Length, Point, Rectangle, Subscription, Task, Theme, Vector, Widget, mouse,
     widget::{canvas, column, container, opaque, row, stack, text, toggler},
 };
 use iced_nodegraph::{
@@ -325,10 +325,8 @@ impl demo_common::Demo for Application {
             overlay = overlay.push(self.stats_panel());
         }
 
-        let graph_view: iced::Element<'_, ApplicationMessage> = ng.into();
-
         stack![
-            graph_view,
+            ng,
             container(opaque(overlay))
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -338,7 +336,7 @@ impl demo_common::Demo for Application {
         ]
         .width(Length::Fill)
         .height(Length::Fill)
-        .into()
+        .boxed()
     }
 
     fn subscription(&self) -> Subscription<ApplicationMessage> {
@@ -408,7 +406,7 @@ impl Application {
     }
 
     fn stats_panel(&self) -> Element<'_, ApplicationMessage> {
-        let palette = self.current_theme.extended_palette();
+        let palette = self.current_theme.palette();
 
         let counts_line = |label: &str, c: Counts| {
             text(format!(
@@ -441,7 +439,7 @@ impl Application {
         let ops = self.latest_info.as_ref().map_or(0, |i| i.timings.len());
         let order: Vec<usize> = (0..ops).collect();
 
-        let legend: Element<'_, ApplicationMessage> = match &self.latest_info {
+        let legend = match &self.latest_info {
             Some(info) if !order.is_empty() => column(order.iter().map(|&k| {
                 let t = &info.timings[k];
                 let us = t.duration.as_secs_f32() * 1_000_000.0;
@@ -451,11 +449,10 @@ impl Application {
                 ]
                 .spacing(8)
                 .align_y(iced::Alignment::Center)
-                .into()
             }))
             .spacing(3)
-            .into(),
-            _ => text("collecting…").size(11).into(),
+            .boxed(),
+            _ => text("collecting…").size(11).boxed(),
         };
 
         let chart = canvas(TimingChart {
@@ -485,7 +482,7 @@ impl Application {
         .padding(12)
         .width(Length::Fixed(248.0));
 
-        container(body).style(panel_style).into()
+        container(body).style(panel_style).boxed()
     }
 }
 
@@ -495,10 +492,10 @@ impl Application {
 /// bandwidth" hypothesis predicts, and is 0 on a fully resident idle frame.
 fn gpu_rows(info: Option<&GraphInfo>) -> Element<'_, ApplicationMessage> {
     let Some(i) = info else {
-        return text("GPU: collecting…").size(12).into();
+        return text("GPU: collecting…").size(12).boxed();
     };
     const MIB: f64 = 1024.0 * 1024.0;
-    let row = |s: String| text(s).size(11).into();
+    let row = |s: String| text(s).size(11);
     column(
         [
             format!(
@@ -531,12 +528,12 @@ fn gpu_rows(info: Option<&GraphInfo>) -> Element<'_, ApplicationMessage> {
         .map(row),
     )
     .spacing(2)
-    .into()
+    .boxed()
 }
 
 /// Translucent chip/panel background shared by the stats panel and its toggle.
 fn panel_style(theme: &Theme) -> container::Style {
-    let palette = theme.extended_palette();
+    let palette = theme.palette();
     let bg = palette.background.base.color;
     container::Style {
         background: Some(iced::Background::Color(Color { a: 0.92, ..bg })),
@@ -550,7 +547,7 @@ fn panel_style(theme: &Theme) -> container::Style {
 }
 
 /// Palette color for stacked-timing op `i`, from the theme's extended palette.
-fn op_color(palette: &iced::theme::palette::Extended, i: usize) -> Color {
+fn op_color(palette: &iced::theme::palette::Palette, i: usize) -> Color {
     match i {
         0 => palette.primary.base.color,
         1 => palette.secondary.base.color,
@@ -573,7 +570,7 @@ fn swatch(color: Color) -> Element<'static, ApplicationMessage> {
             },
             ..container::Style::default()
         })
-        .into()
+        .boxed()
 }
 
 /// Live stacked-area chart of per-operation CPU time over recent frames.
@@ -599,7 +596,7 @@ impl canvas::Program<ApplicationMessage, Theme> for TimingChart<'_> {
         if n == 0 {
             return vec![frame.into_geometry()];
         }
-        let palette = theme.extended_palette();
+        let palette = theme.palette();
         let max_total = self
             .history
             .iter()

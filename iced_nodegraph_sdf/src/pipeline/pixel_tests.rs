@@ -10,6 +10,7 @@ use std::sync::{Mutex, MutexGuard, OnceLock};
 use encase::{ShaderSize, ShaderType, StorageBuffer, internal::WriteInto};
 // iced_wgpu re-exports the exact wgpu crate it renders with, so tests use that
 // instead of a separately-versioned direct `wgpu` dependency.
+use iced_wgpu::core::renderer::Scale;
 use iced_wgpu::core::{Color, Point, Rectangle, Size};
 use iced_wgpu::wgpu;
 use wgpu::util::DeviceExt;
@@ -196,9 +197,9 @@ impl TestRenderer {
         // "sdf_shade") without validation layers, so external profilers
         // (Nsight GPU Trace, RenderDoc) can attribute GPU time per pass.
         let instance = Instance::new(
-            &InstanceDescriptor {
+            InstanceDescriptor {
                 backends: Backends::all(),
-                ..Default::default()
+                ..InstanceDescriptor::new_without_display_handle()
             }
             .with_env(),
         );
@@ -206,6 +207,7 @@ impl TestRenderer {
             power_preference: PowerPreference::LowPower,
             compatible_surface: None,
             force_fallback_adapter: false,
+            apply_limit_buckets: false,
         }))
         .expect("No GPU adapter found");
 
@@ -239,17 +241,23 @@ impl TestRenderer {
 
         let render_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&render_group0_layout],
+            bind_group_layouts: &[Some(&render_group0_layout)],
             ..Default::default()
         });
         let compute_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&compute_group0_layout, &compute_scatter_group1_layout],
+            bind_group_layouts: &[
+                Some(&compute_group0_layout),
+                Some(&compute_scatter_group1_layout),
+            ],
             ..Default::default()
         });
         let sort_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[&compute_group0_layout, &compute_sort_group1_layout],
+            bind_group_layouts: &[
+                Some(&compute_group0_layout),
+                Some(&compute_sort_group1_layout),
+            ],
             ..Default::default()
         });
 
@@ -282,7 +290,7 @@ impl TestRenderer {
                 })],
                 compilation_options: PipelineCompilationOptions::default(),
             }),
-            multiview: None,
+            multiview_mask: None,
             cache: None,
         });
         let compute = |entry: &str, layout: &PipelineLayout| {
@@ -555,6 +563,7 @@ impl TestRenderer {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&self.render_pipeline);
             pass.set_bind_group(0, &render_bg, &[]);
@@ -591,7 +600,7 @@ impl TestRenderer {
                 timeout: Some(std::time::Duration::from_secs(5)),
             })
             .unwrap();
-        let data = slice.get_mapped_range();
+        let data = slice.get_mapped_range().expect("readback buffer is mapped");
         let mut pixels = vec![[0u8; 4]; (width * height) as usize];
         for y in 0..height {
             let src_offset = (y * padded_row) as usize;
@@ -836,6 +845,7 @@ impl TestRenderer {
                     end_of_pass_write_index: Some(3),
                 }),
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&self.render_pipeline);
             pass.set_bind_group(0, &render_bg, &[]);
@@ -853,7 +863,7 @@ impl TestRenderer {
                 timeout: Some(std::time::Duration::from_secs(5)),
             })
             .unwrap();
-        let data = slice.get_mapped_range();
+        let data = slice.get_mapped_range().expect("readback buffer is mapped");
         let mut t = [0u64; 4];
         for (k, slot) in t.iter_mut().enumerate() {
             *slot = u64::from_le_bytes(data[k * 8..k * 8 + 8].try_into().unwrap());
@@ -1198,6 +1208,7 @@ impl TestRenderer {
                     }
                 }),
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&self.render_pipeline);
             pass.set_bind_group(0, &render_bg, &[]);
@@ -1262,7 +1273,7 @@ impl TestRenderer {
                 timeout: Some(std::time::Duration::from_secs(10)),
             })
             .unwrap();
-        let data = slice.get_mapped_range();
+        let data = slice.get_mapped_range().expect("readback buffer is mapped");
         let mut t = [0u64; 6];
         for (k, slot) in t.iter_mut().enumerate() {
             *slot = u64::from_le_bytes(data[k * 8..k * 8 + 8].try_into().unwrap());
@@ -1279,7 +1290,10 @@ impl TestRenderer {
             })
             .unwrap();
         let (coarse_demand_max, coarse_demand_sum) = {
-            let d = coarse_rb.slice(..).get_mapped_range();
+            let d = coarse_rb
+                .slice(..)
+                .get_mapped_range()
+                .expect("readback buffer is mapped");
             let mut max = 0u32;
             let mut sum = 0u64;
             for c in d.as_chunks::<4>().0 {
@@ -1293,7 +1307,10 @@ impl TestRenderer {
         // `fine_counts` packs the live slot count in its low 16 bits and the
         // dropped-candidate count in its high 16 bits (`FINE_COUNT_MASK`).
         let (fine_slot_sum, fine_slot_max, fine_live_tiles, fine_evicted_tiles) = {
-            let d = fine_rb.slice(..).get_mapped_range();
+            let d = fine_rb
+                .slice(..)
+                .get_mapped_range()
+                .expect("readback buffer is mapped");
             let mut sum = 0u64;
             let mut max = 0u32;
             let mut live = 0u32;
@@ -1583,6 +1600,7 @@ impl TestRenderer {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             pass.set_pipeline(&self.render_pipeline);
             pass.set_bind_group(0, &render_bg, &[]);
@@ -1624,7 +1642,7 @@ impl TestRenderer {
             })
             .unwrap();
 
-        let data = slice.get_mapped_range();
+        let data = slice.get_mapped_range().expect("readback buffer is mapped");
         let mut pixels = vec![[0u8; 4]; (width * height) as usize];
         for y in 0..height {
             let src_offset = (y * padded_row) as usize;
@@ -1734,7 +1752,7 @@ impl TestRenderer {
             &self.queue,
             TextureFormat::Rgba8Unorm,
         );
-        let viewport = Viewport::with_physical_size(Size::new(width, height), 1.0);
+        let viewport = Viewport::with_physical_size(Size::new(width, height), Scale::default());
         let bounds = Rectangle::new(Point::ORIGIN, Size::new(width as f32, height as f32));
 
         let target = self.device.create_texture(&TextureDescriptor {
@@ -1779,6 +1797,7 @@ impl TestRenderer {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             prim.draw(&pipeline, &mut pass);
         }
@@ -1807,7 +1826,7 @@ impl TestRenderer {
                 timeout: Some(std::time::Duration::from_secs(5)),
             })
             .unwrap();
-        let data = slice.get_mapped_range();
+        let data = slice.get_mapped_range().expect("readback buffer is mapped");
         let px: Vec<[u8; 4]> = data.as_chunks::<4>().0.to_vec();
         drop(data);
         readback.unmap();
@@ -1831,7 +1850,7 @@ impl TestRenderer {
             &self.queue,
             TextureFormat::Rgba8Unorm,
         );
-        let viewport = Viewport::with_physical_size(Size::new(width, height), 1.0);
+        let viewport = Viewport::with_physical_size(Size::new(width, height), Scale::default());
         let target = self.device.create_texture(&TextureDescriptor {
             label: None,
             size: Extent3d {
@@ -1880,6 +1899,7 @@ impl TestRenderer {
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
+                multiview_mask: None,
             });
             let sx = bounds.x.max(0.0) as u32;
             let sy = bounds.y.max(0.0) as u32;
@@ -1913,7 +1933,7 @@ impl TestRenderer {
                 timeout: Some(std::time::Duration::from_secs(5)),
             })
             .unwrap();
-        let data = slice.get_mapped_range();
+        let data = slice.get_mapped_range().expect("readback buffer is mapped");
         let px: Vec<[u8; 4]> = data.as_chunks::<4>().0.to_vec();
         drop(data);
         readback.unmap();
@@ -1944,7 +1964,13 @@ impl TestRenderer {
         );
         // `width`/`height` are PHYSICAL; bounds/clips are LOGICAL, so the scissor
         // and the viewport scale must convert between them like iced does.
-        let viewport = Viewport::with_physical_size(Size::new(width, height), scale);
+        let viewport = Viewport::with_physical_size(
+            Size::new(width, height),
+            Scale {
+                window: scale,
+                application: 1.0,
+            },
+        );
         let target = self.device.create_texture(&TextureDescriptor {
             label: None,
             size: Extent3d {
@@ -1995,6 +2021,7 @@ impl TestRenderer {
                     depth_stencil_attachment: None,
                     timestamp_writes: None,
                     occlusion_query_set: None,
+                    multiview_mask: None,
                 });
                 let sx = (bounds.x * scale).max(0.0) as u32;
                 let sy = (bounds.y * scale).max(0.0) as u32;
@@ -2031,7 +2058,7 @@ impl TestRenderer {
                     timeout: Some(std::time::Duration::from_secs(5)),
                 })
                 .unwrap();
-            let data = slice.get_mapped_range();
+            let data = slice.get_mapped_range().expect("readback buffer is mapped");
             out.push(data.as_chunks::<4>().0.to_vec());
             drop(data);
             readback.unmap();
@@ -4805,7 +4832,7 @@ fn render_pipeline_frame(
     use iced_wgpu::primitive::{Pipeline, Primitive};
 
     let full = Rectangle::new(Point::ORIGIN, Size::new(w as f32, h as f32));
-    let viewport = Viewport::with_physical_size(Size::new(w, h), 1.0);
+    let viewport = Viewport::with_physical_size(Size::new(w, h), Scale::default());
     for p in prims {
         p.prepare(pipeline, &r.device, &r.queue, &full, &viewport);
     }
@@ -4852,6 +4879,7 @@ fn render_pipeline_frame(
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
         // The first draw submits the deferred cull compute (production order).
         for p in prims {
@@ -4887,7 +4915,10 @@ fn render_pipeline_frame(
             timeout: Some(std::time::Duration::from_secs(10)),
         })
         .unwrap();
-    let data = readback.slice(..).get_mapped_range();
+    let data = readback
+        .slice(..)
+        .get_mapped_range()
+        .expect("readback buffer is mapped");
     let mut px = vec![[0u8; 4]; (w * h) as usize];
     for y in 0..h {
         let src = (y * padded_row) as usize;
@@ -4923,7 +4954,7 @@ fn pipeline_frame_bounded(
     use iced_wgpu::graphics::Viewport;
     use iced_wgpu::primitive::{Pipeline, Primitive};
 
-    let viewport = Viewport::with_physical_size(Size::new(w, h), 1.0);
+    let viewport = Viewport::with_physical_size(Size::new(w, h), Scale::default());
     for (p, bounds) in prims {
         p.prepare(pipeline, &r.device, &r.queue, bounds, &viewport);
     }
@@ -4970,6 +5001,7 @@ fn pipeline_frame_bounded(
             depth_stencil_attachment: None,
             timestamp_writes: None,
             occlusion_query_set: None,
+            multiview_mask: None,
         });
         // The first draw submits the deferred cull compute (production order).
         for (p, bounds) in prims {
@@ -5010,7 +5042,10 @@ fn pipeline_frame_bounded(
             timeout: Some(std::time::Duration::from_secs(10)),
         })
         .unwrap();
-    let data = readback.slice(..).get_mapped_range();
+    let data = readback
+        .slice(..)
+        .get_mapped_range()
+        .expect("readback buffer is mapped");
     let mut px = vec![[0u8; 4]; (w * h) as usize];
     for y in 0..h {
         let src = (y * padded_row) as usize;
@@ -5817,7 +5852,7 @@ fn cull_dispatch_skipped_while_index_valid() {
     let r = shared_renderer();
     let (w, h) = (256u32, 256u32);
     let full = Rectangle::new(Point::ORIGIN, Size::new(w as f32, h as f32));
-    let viewport = Viewport::with_physical_size(Size::new(w, h), 1.0);
+    let viewport = Viewport::with_physical_size(Size::new(w, h), Scale::default());
     let style = Style::solid(rgba(0.3, 0.4, 0.5, 1.0));
 
     let frame = |pipeline: &mut SdfPipeline,
@@ -6086,7 +6121,7 @@ fn measure_idle_prepare_cost() {
     let zoom = 0.24131_f32;
     let cam = [-327.7_f32, -132.0];
     let full = Rectangle::new(Point::ORIGIN, Size::new(w as f32, h as f32));
-    let viewport = Viewport::with_physical_size(Size::new(w, h), 1.0);
+    let viewport = Viewport::with_physical_size(Size::new(w, h), Scale::default());
 
     let dark = Style::solid(rgba(0.12, 0.13, 0.16, 1.0));
     let fill_style = Style::solid(rgba(0.30, 0.32, 0.40, 1.0));
@@ -6217,7 +6252,7 @@ fn measure_drag_prepare_cost() {
     let zoom = 0.24131_f32;
     let cam = [-327.7_f32, -132.0];
     let full = Rectangle::new(Point::ORIGIN, Size::new(w as f32, h as f32));
-    let viewport = Viewport::with_physical_size(Size::new(w, h), 1.0);
+    let viewport = Viewport::with_physical_size(Size::new(w, h), Scale::default());
 
     let dark = Style::solid(rgba(0.12, 0.13, 0.16, 1.0));
     let fill_style = Style::solid(rgba(0.30, 0.32, 0.40, 1.0));
@@ -7298,7 +7333,7 @@ fn styles_dedup_across_identical_entries() {
 
     let r = shared_renderer();
     let (w, h) = (256u32, 256u32);
-    let viewport = Viewport::with_physical_size(Size::new(w, h), 1.0);
+    let viewport = Viewport::with_physical_size(Size::new(w, h), Scale::default());
     let mut pipeline = SdfPipeline::new(&r.device, &r.queue, TextureFormat::Rgba8Unorm);
 
     let style_a = Style::solid(rgba(0.3, 0.4, 0.5, 1.0));
@@ -7526,7 +7561,7 @@ fn prepare_assigns_draw_slots_independent_of_draw_order() {
     let r = shared_renderer();
     let (w, h) = (64u32, 64u32);
     let full = Rectangle::new(Point::ORIGIN, Size::new(w as f32, h as f32));
-    let viewport = Viewport::with_physical_size(Size::new(w, h), 1.0);
+    let viewport = Viewport::with_physical_size(Size::new(w, h), Scale::default());
     let style = Style::solid(rgba(1.0, 0.0, 0.0, 1.0));
 
     let mut pipeline = SdfPipeline::new(&r.device, &r.queue, TextureFormat::Rgba8Unorm);

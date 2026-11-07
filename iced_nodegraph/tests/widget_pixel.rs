@@ -18,13 +18,13 @@
 
 mod common;
 
-use iced::advanced::widget::{Tree, Widget};
-use iced::advanced::{Layout, layout, mouse, renderer};
+use iced::advanced::renderer::Scale;
+use iced::advanced::widget::{Tree, Widget as _};
+use iced::advanced::{layout, mouse, renderer, shell};
 use iced::widget::text;
-use iced::{Color, Element, Length, Point, Rectangle, Size, Theme};
-use iced_wgpu::core::clipboard;
+use iced::{Color, Length, Point, Rectangle, Size, Theme};
 
-use common::shared;
+use common::{headless_shell, mount, relayout, shared};
 use iced_nodegraph::{ColorQuad, NodeGraph, NodeStyle, Pattern, default_node_style, node};
 use iced_wgpu::Renderer;
 use iced_wgpu::graphics::Viewport;
@@ -57,25 +57,18 @@ fn render_one_node() -> Option<Vec<[u8; 4]>> {
                 Point::new(W as f32 * 0.5 - 40.0, H as f32 * 0.5 - 20.0),
                 1.0,
             );
-    graph = graph.push_node(node(
-        0_usize,
-        Point::new(0.0, 0.0),
-        Element::from(text("Hi")),
-    ));
+    graph = graph.push_node(node(0_usize, Point::new(0.0, 0.0), text("Hi")));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Renderer>);
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &*renderer,
         &layout::Limits::new(Size::ZERO, Size::new(W as f32, H as f32)),
     );
-    let layout = Layout::new(&layout_node);
     let viewport_rect = Rectangle::new(Point::ORIGIN, Size::new(W as f32, H as f32));
 
     // One update syncs the controlled `camera()` into the widget camera.
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     graph.update(
         &mut tree,
         &iced::Event::Mouse(mouse::Event::CursorMoved {
@@ -84,7 +77,6 @@ fn render_one_node() -> Option<Vec<[u8; 4]>> {
         layout,
         mouse::Cursor::Unavailable,
         &*renderer,
-        &mut clipboard,
         &mut shell,
         &viewport_rect,
     );
@@ -102,7 +94,7 @@ fn render_one_node() -> Option<Vec<[u8; 4]>> {
     );
 
     let bytes = renderer.screenshot(
-        &Viewport::with_physical_size(Size::new(W, H), 1.0),
+        &Viewport::with_physical_size(Size::new(W, H), Scale::default()),
         Color::TRANSPARENT,
     );
     Some(bytes.as_chunks::<4>().0.to_vec())
@@ -214,11 +206,9 @@ fn zoomout_grid_missing_nodes_at(scale: f32, frames: u32, cam: Point, zoom: f32)
                 node(
                     id,
                     Point::new(wx, wy),
-                    Element::from(
-                        container(text(""))
-                            .width(Length::Fixed(nw))
-                            .height(Length::Fixed(nh)),
-                    ),
+                    container(text(""))
+                        .width(Length::Fixed(nw))
+                        .height(Length::Fixed(nh)),
                 )
                 .style(|theme, status| NodeStyle {
                     fill_color: ColorQuad::solid(Color::from_rgb(1.0, 0.0, 0.0)),
@@ -227,17 +217,14 @@ fn zoomout_grid_missing_nodes_at(scale: f32, frames: u32, cam: Point, zoom: f32)
             );
         }
 
-        let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Renderer>);
-        let layout_node = graph.layout(
-            &mut tree,
+        let (mut tree, layout) = mount(
+            &mut graph,
             &*renderer,
             &layout::Limits::new(Size::ZERO, Size::new(GW as f32, GH as f32)),
         );
-        let layout = Layout::new(&layout_node);
 
-        let mut msgs: Vec<()> = Vec::new();
-        let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-        let mut clipboard = clipboard::Null;
+        let mut bus = shell::Bus::new();
+        let mut shell = headless_shell::<()>(&mut bus);
         graph.update(
             &mut tree,
             &iced::Event::Mouse(mouse::Event::CursorMoved {
@@ -246,7 +233,6 @@ fn zoomout_grid_missing_nodes_at(scale: f32, frames: u32, cam: Point, zoom: f32)
             layout,
             mouse::Cursor::Unavailable,
             &*renderer,
-            &mut clipboard,
             &mut shell,
             &viewport_rect,
         );
@@ -264,7 +250,13 @@ fn zoomout_grid_missing_nodes_at(scale: f32, frames: u32, cam: Point, zoom: f32)
         );
 
         let bytes = renderer.screenshot(
-            &Viewport::with_physical_size(Size::new(pw, ph), scale),
+            &Viewport::with_physical_size(
+                Size::new(pw, ph),
+                Scale {
+                    window: scale,
+                    application: 1.0,
+                },
+            ),
             Color::TRANSPARENT,
         );
         px = bytes.as_chunks::<4>().0.to_vec();
@@ -382,11 +374,9 @@ fn offscreen_node_does_not_desync_later_nodes() {
             node(
                 id,
                 Point::new(wx, wy),
-                Element::from(
-                    container(text("Xy"))
-                        .width(Length::Fixed(nw))
-                        .height(Length::Fixed(nh)),
-                ),
+                container(text("Xy"))
+                    .width(Length::Fixed(nw))
+                    .height(Length::Fixed(nh)),
             )
             .style(|theme, status| NodeStyle {
                 fill_color: ColorQuad::solid(Color::from_rgb(0.10, 0.15, 0.55)),
@@ -397,18 +387,15 @@ fn offscreen_node_does_not_desync_later_nodes() {
         );
     }
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Renderer>);
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &*renderer,
         &layout::Limits::new(Size::ZERO, Size::new(GW as f32, GH as f32)),
     );
-    let layout = Layout::new(&layout_node);
     let viewport_rect = Rectangle::new(Point::ORIGIN, Size::new(GW as f32, GH as f32));
 
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     graph.update(
         &mut tree,
         &iced::Event::Mouse(mouse::Event::CursorMoved {
@@ -417,7 +404,6 @@ fn offscreen_node_does_not_desync_later_nodes() {
         layout,
         mouse::Cursor::Unavailable,
         &*renderer,
-        &mut clipboard,
         &mut shell,
         &viewport_rect,
     );
@@ -434,7 +420,7 @@ fn offscreen_node_does_not_desync_later_nodes() {
     );
 
     let bytes = renderer.screenshot(
-        &Viewport::with_physical_size(Size::new(VW, GH), 1.0),
+        &Viewport::with_physical_size(Size::new(VW, GH), Scale::default()),
         Color::from_rgb(0.0, 0.0, 0.0),
     );
     let px: Vec<[u8; 4]> = bytes.as_chunks::<4>().0.to_vec();
@@ -527,27 +513,22 @@ fn render_node_selection(selected: bool) -> Option<Vec<[u8; 4]>> {
         node(
             0_usize,
             Point::new(0.0, 0.0),
-            Element::from(
-                iced::widget::container(text("Node"))
-                    .width(Length::Fixed(160.0))
-                    .height(Length::Fixed(90.0)),
-            ),
+            iced::widget::container(text("Node"))
+                .width(Length::Fixed(160.0))
+                .height(Length::Fixed(90.0)),
         )
         .selected(selected),
     );
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Renderer>);
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &*renderer,
         &layout::Limits::new(Size::ZERO, Size::new(W as f32, H as f32)),
     );
-    let layout = Layout::new(&layout_node);
     let viewport_rect = Rectangle::new(Point::ORIGIN, Size::new(W as f32, H as f32));
 
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     graph.update(
         &mut tree,
         &iced::Event::Mouse(mouse::Event::CursorMoved {
@@ -556,7 +537,6 @@ fn render_node_selection(selected: bool) -> Option<Vec<[u8; 4]>> {
         layout,
         mouse::Cursor::Unavailable,
         &*renderer,
-        &mut clipboard,
         &mut shell,
         &viewport_rect,
     );
@@ -572,7 +552,7 @@ fn render_node_selection(selected: bool) -> Option<Vec<[u8; 4]>> {
         &viewport_rect,
     );
     let bytes = renderer.screenshot(
-        &Viewport::with_physical_size(Size::new(W, H), 1.0),
+        &Viewport::with_physical_size(Size::new(W, H), Scale::default()),
         Color::TRANSPARENT,
     );
     Some(bytes.as_chunks::<4>().0.to_vec())
@@ -595,11 +575,9 @@ fn render_nested_graph() -> Option<Vec<[u8; 4]>> {
                 node(
                     0_usize,
                     Point::new(10.0, 10.0),
-                    Element::from(
-                        iced::widget::container(iced::widget::Space::new())
-                            .width(Length::Fixed(40.0))
-                            .height(Length::Fixed(20.0)),
-                    ),
+                    iced::widget::container(iced::widget::Space::new())
+                        .width(Length::Fixed(40.0))
+                        .height(Length::Fixed(20.0)),
                 )
                 .style(|theme, status| NodeStyle {
                     fill_color: ColorQuad::solid(Color::from_rgb(1.0, 0.0, 0.0)),
@@ -616,22 +594,19 @@ fn render_nested_graph() -> Option<Vec<[u8; 4]>> {
             .width(Length::Fixed(W as f32))
             .height(Length::Fixed(H as f32))
             .camera(Point::ORIGIN, 2.0);
-    graph = graph.push_node(node(0_usize, Point::ORIGIN, Element::from(inner)));
+    graph = graph.push_node(node(0_usize, Point::ORIGIN, inner));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Renderer>);
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &*renderer,
         &layout::Limits::new(Size::ZERO, Size::new(W as f32, H as f32)),
     );
-    let layout = Layout::new(&layout_node);
     let viewport_rect = Rectangle::new(Point::ORIGIN, Size::new(W as f32, H as f32));
 
     // One update syncs both cameras: the outer directly, the inner through
     // child dispatch.
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     graph.update(
         &mut tree,
         &iced::Event::Mouse(mouse::Event::CursorMoved {
@@ -640,7 +615,6 @@ fn render_nested_graph() -> Option<Vec<[u8; 4]>> {
         layout,
         mouse::Cursor::Unavailable,
         &*renderer,
-        &mut clipboard,
         &mut shell,
         &viewport_rect,
     );
@@ -656,7 +630,7 @@ fn render_nested_graph() -> Option<Vec<[u8; 4]>> {
         &viewport_rect,
     );
     let bytes = renderer.screenshot(
-        &Viewport::with_physical_size(Size::new(W, H), 1.0),
+        &Viewport::with_physical_size(Size::new(W, H), Scale::default()),
         Color::TRANSPARENT,
     );
     Some(bytes.as_chunks::<4>().0.to_vec())
@@ -727,13 +701,11 @@ fn render_pin_shape(shape: iced_nodegraph::PinShape) -> Option<Vec<[u8; 4]>> {
         node(
             0_usize,
             Point::new(90.0, 70.0),
-            Element::from(
-                iced::widget::container(
-                    node_pin(PinSide::Left, 0_usize, text("")).direction(PinDirection::Output),
-                )
-                .width(Length::Fixed(120.0))
-                .height(Length::Fixed(80.0)),
-            ),
+            iced::widget::container(
+                node_pin(PinSide::Left, 0_usize, text("")).direction(PinDirection::Output),
+            )
+            .width(Length::Fixed(120.0))
+            .height(Length::Fixed(80.0)),
         )
         .pin_style(move |theme, _pin, _peer, status| PinStyle {
             color: Color::from_rgb(1.0, 0.0, 1.0).into(),
@@ -747,18 +719,15 @@ fn render_pin_shape(shape: iced_nodegraph::PinShape) -> Option<Vec<[u8; 4]>> {
         }),
     );
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Renderer>);
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &*renderer,
         &layout::Limits::new(Size::ZERO, Size::new(W as f32, H as f32)),
     );
-    let layout = Layout::new(&layout_node);
     let viewport_rect = Rectangle::new(Point::ORIGIN, Size::new(W as f32, H as f32));
 
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     graph.update(
         &mut tree,
         &iced::Event::Mouse(mouse::Event::CursorMoved {
@@ -767,7 +736,6 @@ fn render_pin_shape(shape: iced_nodegraph::PinShape) -> Option<Vec<[u8; 4]>> {
         layout,
         mouse::Cursor::Unavailable,
         &*renderer,
-        &mut clipboard,
         &mut shell,
         &viewport_rect,
     );
@@ -783,7 +751,7 @@ fn render_pin_shape(shape: iced_nodegraph::PinShape) -> Option<Vec<[u8; 4]>> {
         &viewport_rect,
     );
     let bytes = renderer.screenshot(
-        &Viewport::with_physical_size(Size::new(W, H), 1.0),
+        &Viewport::with_physical_size(Size::new(W, H), Scale::default()),
         Color::TRANSPARENT,
     );
     Some(bytes.as_chunks::<4>().0.to_vec())
@@ -882,12 +850,12 @@ fn render_routed_edge(scene: RouteScene) -> Option<Vec<[u8; 4]>> {
     graph = graph.push_node(node(
         0usize,
         Point::new(0.0, 0.0),
-        Element::from(node_pin(PinSide::Right, 0usize, pin_body()).direction(PinDirection::Output)),
+        node_pin(PinSide::Right, 0usize, pin_body()).direction(PinDirection::Output),
     ));
     graph = graph.push_node(node(
         1usize,
         Point::new(200.0, 0.0),
-        Element::from(node_pin(PinSide::Left, 0usize, pin_body()).direction(PinDirection::Input)),
+        node_pin(PinSide::Left, 0usize, pin_body()).direction(PinDirection::Input),
     ));
 
     let routed = matches!(
@@ -901,18 +869,15 @@ fn render_routed_edge(scene: RouteScene) -> Option<Vec<[u8; 4]>> {
         graph = graph.push_anchor(anchor(ANCHOR, Point::new(115.0, 160.0)));
     }
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Renderer>);
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &*renderer,
         &layout::Limits::new(Size::ZERO, Size::new(W as f32, H as f32)),
     );
-    let layout = Layout::new(&layout_node);
     let viewport_rect = Rectangle::new(Point::ORIGIN, Size::new(W as f32, H as f32));
 
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     let mut feed =
         |graph: &mut NodeGraph<'static, iced_nodegraph::Indexed, (), Theme, Renderer>,
          tree: &mut Tree,
@@ -924,7 +889,6 @@ fn render_routed_edge(scene: RouteScene) -> Option<Vec<[u8; 4]>> {
                 layout,
                 cursor,
                 &*renderer,
-                &mut clipboard,
                 &mut shell,
                 &viewport_rect,
             );
@@ -988,7 +952,7 @@ fn render_routed_edge(scene: RouteScene) -> Option<Vec<[u8; 4]>> {
     );
 
     let bytes = renderer.screenshot(
-        &Viewport::with_physical_size(Size::new(W, H), 1.0),
+        &Viewport::with_physical_size(Size::new(W, H), Scale::default()),
         Color::TRANSPARENT,
     );
     Some(bytes.as_chunks::<4>().0.to_vec())
@@ -1025,12 +989,12 @@ fn render_route_drag(route: &[usize], drag: bool) -> Option<Vec<[u8; 4]>> {
     graph = graph.push_node(node(
         0usize,
         Point::new(0.0, 0.0),
-        Element::from(node_pin(PinSide::Right, 0usize, pin_body()).direction(PinDirection::Output)),
+        node_pin(PinSide::Right, 0usize, pin_body()).direction(PinDirection::Output),
     ));
     graph = graph.push_node(node(
         1usize,
         Point::new(200.0, 0.0),
-        Element::from(node_pin(PinSide::Left, 0usize, pin_body()).direction(PinDirection::Input)),
+        node_pin(PinSide::Left, 0usize, pin_body()).direction(PinDirection::Input),
     ));
     graph = graph.push_anchor(anchor(ANCHOR, Point::new(115.0, 160.0)));
     graph = graph.push_edge(
@@ -1042,18 +1006,15 @@ fn render_route_drag(route: &[usize], drag: bool) -> Option<Vec<[u8; 4]>> {
         .route(route.to_vec()),
     );
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Renderer>);
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &*renderer,
         &layout::Limits::new(Size::ZERO, Size::new(W as f32, H as f32)),
     );
-    let layout = Layout::new(&layout_node);
     let viewport_rect = Rectangle::new(Point::ORIGIN, Size::new(W as f32, H as f32));
 
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     let mut cursor = mouse::Cursor::Unavailable;
     // One event before anything else, so `update` syncs `camera()` into the
     // camera and picks up the viewport origin. Without it a frame that feeds no
@@ -1067,7 +1028,6 @@ fn render_route_drag(route: &[usize], drag: bool) -> Option<Vec<[u8; 4]>> {
         layout,
         mouse::Cursor::Unavailable,
         &*renderer,
-        &mut clipboard,
         &mut shell,
         &viewport_rect,
     );
@@ -1096,7 +1056,6 @@ fn render_route_drag(route: &[usize], drag: bool) -> Option<Vec<[u8; 4]>> {
                 layout,
                 mouse::Cursor::Available(at),
                 &*renderer,
-                &mut clipboard,
                 &mut shell,
                 &viewport_rect,
             );
@@ -1117,7 +1076,7 @@ fn render_route_drag(route: &[usize], drag: bool) -> Option<Vec<[u8; 4]>> {
     );
 
     let bytes = renderer.screenshot(
-        &Viewport::with_physical_size(Size::new(W, H), 1.0),
+        &Viewport::with_physical_size(Size::new(W, H), Scale::default()),
         Color::TRANSPARENT,
     );
     Some(bytes.as_chunks::<4>().0.to_vec())
@@ -1156,16 +1115,12 @@ fn render_regrab(after_detach: &[usize], at_reattach: &[usize]) -> Option<Vec<[u
         graph = graph.push_node(node(
             0usize,
             Point::new(0.0, 0.0),
-            Element::from(
-                node_pin(PinSide::Right, 0usize, pin_body()).direction(PinDirection::Output),
-            ),
+            node_pin(PinSide::Right, 0usize, pin_body()).direction(PinDirection::Output),
         ));
         graph = graph.push_node(node(
             1usize,
             Point::new(200.0, 0.0),
-            Element::from(
-                node_pin(PinSide::Left, 0usize, pin_body()).direction(PinDirection::Input),
-            ),
+            node_pin(PinSide::Left, 0usize, pin_body()).direction(PinDirection::Input),
         ));
         graph = graph.push_anchor(anchor(ANCHOR, Point::new(115.0, 160.0)));
         graph = graph.push_edge(
@@ -1207,36 +1162,29 @@ fn render_regrab(after_detach: &[usize], at_reattach: &[usize]) -> Option<Vec<[u
     ];
 
     let mut graph = scene(&[ANCHOR]);
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Renderer>);
-    let layout_node = graph.layout(
-        &mut tree,
-        &*renderer,
-        &layout::Limits::new(Size::ZERO, Size::new(W as f32, H as f32)),
-    );
-    let layout = Layout::new(&layout_node);
+    let limits = layout::Limits::new(Size::ZERO, Size::new(W as f32, H as f32));
+    let (mut tree, _) = mount(&mut graph, &*renderer, &limits);
     let viewport_rect = Rectangle::new(Point::ORIGIN, Size::new(W as f32, H as f32));
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
 
     for (route, event, at) in steps {
         let mut g = scene(route);
-        tree.diff(&g as &dyn Widget<(), Theme, Renderer>);
+        let layout = relayout(&mut g, &mut tree, &*renderer, &limits);
         g.update(
             &mut tree,
             &event,
             layout,
             mouse::Cursor::Available(at),
             &*renderer,
-            &mut clipboard,
             &mut shell,
             &viewport_rect,
         );
     }
 
     // The frame the user is looking at: snapped back on, host at `at_reattach`.
-    let final_graph = scene(at_reattach);
-    tree.diff(&final_graph as &dyn Widget<(), Theme, Renderer>);
+    let mut final_graph = scene(at_reattach);
+    let layout = relayout(&mut final_graph, &mut tree, &*renderer, &limits);
     final_graph.draw(
         &tree,
         renderer,
@@ -1249,7 +1197,7 @@ fn render_regrab(after_detach: &[usize], at_reattach: &[usize]) -> Option<Vec<[u
         &viewport_rect,
     );
     let bytes = renderer.screenshot(
-        &Viewport::with_physical_size(Size::new(W, H), 1.0),
+        &Viewport::with_physical_size(Size::new(W, H), Scale::default()),
         Color::TRANSPARENT,
     );
     let _ = &mut graph;
@@ -1475,12 +1423,12 @@ fn render_particles(particles: &[(f32, f32)]) -> Option<(Vec<[u8; 4]>, bool)> {
     graph = graph.push_node(node(
         0usize,
         Point::new(0.0, 0.0),
-        Element::from(node_pin(PinSide::Right, 0usize, pin_body()).direction(PinDirection::Output)),
+        node_pin(PinSide::Right, 0usize, pin_body()).direction(PinDirection::Output),
     ));
     graph = graph.push_node(node(
         1usize,
         Point::new(200.0, 0.0),
-        Element::from(node_pin(PinSide::Left, 0usize, pin_body()).direction(PinDirection::Input)),
+        node_pin(PinSide::Left, 0usize, pin_body()).direction(PinDirection::Input),
     ));
 
     let now = Instant::now();
@@ -1502,18 +1450,15 @@ fn render_particles(particles: &[(f32, f32)]) -> Option<(Vec<[u8; 4]>, bool)> {
         ),
     );
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Renderer>);
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &*renderer,
         &layout::Limits::new(Size::ZERO, Size::new(W as f32, H as f32)),
     );
-    let layout = Layout::new(&layout_node);
     let viewport_rect = Rectangle::new(Point::ORIGIN, Size::new(W as f32, H as f32));
 
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clipboard = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     graph.update(
         &mut tree,
         &iced::Event::Mouse(mouse::Event::CursorMoved {
@@ -1522,7 +1467,6 @@ fn render_particles(particles: &[(f32, f32)]) -> Option<(Vec<[u8; 4]>, bool)> {
         layout,
         mouse::Cursor::Unavailable,
         &*renderer,
-        &mut clipboard,
         &mut shell,
         &viewport_rect,
     );
@@ -1540,19 +1484,18 @@ fn render_particles(particles: &[(f32, f32)]) -> Option<(Vec<[u8; 4]>, bool)> {
     );
 
     let bytes = renderer.screenshot(
-        &Viewport::with_physical_size(Size::new(W, H), 1.0),
+        &Viewport::with_physical_size(Size::new(W, H), Scale::default()),
         Color::TRANSPARENT,
     );
 
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     graph.update(
         &mut tree,
         &iced::Event::Window(iced::window::Event::RedrawRequested(Instant::now())),
         layout,
         mouse::Cursor::Unavailable,
         &*renderer,
-        &mut clipboard,
         &mut shell,
         &viewport_rect,
     );

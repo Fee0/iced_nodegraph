@@ -95,7 +95,7 @@ pub(crate) struct Roles {
 impl Roles {
     /// Derives the node-graph colors of `theme`.
     pub fn of(theme: &Theme) -> Self {
-        let palette = theme.extended_palette();
+        let palette = theme.palette();
         let canvas = palette.background.base.color;
         // `Pair::text` is iced's readability-corrected foreground for this exact
         // background, so the legibility ladder is anchored on a color already
@@ -189,7 +189,7 @@ mod tests {
     fn a_node_body_keeps_most_of_the_canvas_text_contrast() {
         for theme in Theme::ALL {
             let roles = Roles::of(theme);
-            let text = theme.extended_palette().background.base.text;
+            let text = theme.palette().background.base.text;
             let retained =
                 roles.body.relative_contrast(text) / roles.canvas.relative_contrast(text);
             assert!(

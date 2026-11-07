@@ -21,11 +21,10 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use iced::advanced::widget::{Tree, Widget};
-use iced::advanced::{Layout, layout, mouse, renderer};
-use iced::widget::{container, text};
-use iced::{Element, Length, Point, Rectangle, Size, Theme, Vector, window};
-use iced_wgpu::core::clipboard;
+use iced::advanced::widget::{Meta, Tree, Widget};
+use iced::advanced::{Layout, layout, mouse, renderer, shell};
+use iced::widget::{Container, Text, container, text};
+use iced::{Length, Point, Rectangle, Size, Theme, Vector, window};
 
 use iced_nodegraph::{
     AnchorStatus, Indexed, NodeGraph, PinRef, anchor, default_anchor_style, edge, node, pin,
@@ -34,6 +33,7 @@ use iced_nodegraph::{
 mod common;
 
 use common::record::Recorder;
+use common::{headless_shell, mount};
 
 // ---------------------------------------------------------------------------
 // A leaf node-content widget that claims `Pointer` while the cursor is over it
@@ -45,6 +45,8 @@ struct InteractionProbe {
     cursor_seen: Rc<Cell<Option<Point>>>,
 }
 
+impl Meta for InteractionProbe {}
+
 impl<Message> Widget<Message, Theme, Recorder> for InteractionProbe {
     fn size(&self) -> Size<Length> {
         Size::new(
@@ -52,12 +54,12 @@ impl<Message> Widget<Message, Theme, Recorder> for InteractionProbe {
             Length::Fixed(PROBE_SIZE.height),
         )
     }
-    fn layout(&mut self, _: &mut Tree, _: &Recorder, limits: &layout::Limits) -> layout::Node {
-        layout::Node::new(limits.resolve(
+    fn layout(&mut self, tree: &mut Tree, _: &Recorder, limits: &layout::Limits) {
+        tree.size = layout::atomic(
+            limits,
             Length::Fixed(PROBE_SIZE.width),
             Length::Fixed(PROBE_SIZE.height),
-            Size::ZERO,
-        ))
+        );
     }
     fn draw(
         &self,
@@ -65,7 +67,7 @@ impl<Message> Widget<Message, Theme, Recorder> for InteractionProbe {
         _: &mut Recorder,
         _: &Theme,
         _: &renderer::Style,
-        _: Layout<'_>,
+        _: Layout,
         _: mouse::Cursor,
         _: &Rectangle,
     ) {
@@ -73,7 +75,7 @@ impl<Message> Widget<Message, Theme, Recorder> for InteractionProbe {
     fn mouse_interaction(
         &self,
         _: &Tree,
-        layout: Layout<'_>,
+        layout: Layout,
         cursor: mouse::Cursor,
         _: &Rectangle,
         _: &Recorder,
@@ -84,12 +86,6 @@ impl<Message> Widget<Message, Theme, Recorder> for InteractionProbe {
         } else {
             mouse::Interaction::None
         }
-    }
-}
-
-impl<'a, Message: 'a> From<InteractionProbe> for Element<'a, Message, Theme, Recorder> {
-    fn from(w: InteractionProbe) -> Self {
-        Element::new(w)
     }
 }
 
@@ -108,20 +104,15 @@ fn graph_with_probe(
     camera_zoom: f32,
     cursor_seen: Rc<Cell<Option<Point>>>,
     renderer: &Recorder,
-) -> (Graph, Tree, layout::Node) {
+) -> (Graph, Tree, Layout) {
     let mut graph: Graph = NodeGraph::default()
         .width(Length::Fixed(GRAPH_SIZE.width))
         .height(Length::Fixed(GRAPH_SIZE.height))
         .camera(camera_pos, camera_zoom);
-    graph = graph.push_node(node(
-        0usize,
-        node_world,
-        Element::from(InteractionProbe { cursor_seen }),
-    ));
+    graph = graph.push_node(node(0usize, node_world, InteractionProbe { cursor_seen }));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Recorder>);
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         renderer,
         &layout::Limits::new(Size::ZERO, VIEWPORT),
     );
@@ -129,7 +120,7 @@ fn graph_with_probe(
     // One update syncs `camera()` into the widget camera (the host value differs
     // from the unset last-synced value); the event itself is a no-op, and the
     // cursor is parked off-widget so no gesture starts.
-    let layout = Layout::with_offset(origin, &layout_node);
+    let layout = layout.move_to(Point::ORIGIN + origin);
     drive(
         &mut graph,
         &mut tree,
@@ -141,7 +132,7 @@ fn graph_with_probe(
         renderer,
     );
 
-    (graph, tree, layout_node)
+    (graph, tree, layout)
 }
 
 /// Feeds one event through `Widget::update`, discarding the messages, and
@@ -149,21 +140,19 @@ fn graph_with_probe(
 fn drive(
     graph: &mut Graph,
     tree: &mut Tree,
-    layout: Layout<'_>,
+    layout: Layout,
     event: &iced::Event,
     cursor: mouse::Cursor,
     renderer: &Recorder,
 ) -> window::RedrawRequest {
-    let mut msgs: Vec<()> = Vec::new();
-    let mut shell = iced_wgpu::core::Shell::new(&mut msgs);
-    let mut clip = clipboard::Null;
+    let mut bus = shell::Bus::new();
+    let mut shell = headless_shell::<()>(&mut bus);
     graph.update(
         tree,
         event,
         layout,
         cursor,
         renderer,
-        &mut clip,
         &mut shell,
         &Rectangle::new(Point::ORIGIN, VIEWPORT),
     );
@@ -191,9 +180,8 @@ fn child_under_cursor_sets_the_cursor() {
 
     let cursor_seen = Rc::new(Cell::new(None));
     let renderer = Recorder::detached();
-    let (graph, tree, layout_node) =
+    let (graph, tree, layout) =
         graph_with_probe(origin, world, cam_pos, zoom, cursor_seen.clone(), &renderer);
-    let layout = Layout::with_offset(origin, &layout_node);
 
     // Centre of the probe, in world coordinates, mapped to its screen pixel.
     let inside_world = Point::new(
@@ -234,9 +222,8 @@ fn empty_canvas_claims_nothing() {
 
     let cursor_seen = Rc::new(Cell::new(None));
     let renderer = Recorder::detached();
-    let (graph, tree, layout_node) =
+    let (graph, tree, layout) =
         graph_with_probe(origin, world, cam_pos, zoom, cursor_seen.clone(), &renderer);
-    let layout = Layout::with_offset(origin, &layout_node);
 
     // Inside the graph, far from the only node.
     let screen = to_screen(origin, Point::new(300.0, 300.0), cam_pos, zoom);
@@ -263,7 +250,7 @@ fn empty_canvas_claims_nothing() {
 fn cursor_outside_the_graph_claims_nothing() {
     let origin = Vector::new(40.0, 100.0);
     let renderer = Recorder::detached();
-    let (graph, tree, layout_node) = graph_with_probe(
+    let (graph, tree, layout) = graph_with_probe(
         origin,
         Point::new(10.0, 20.0),
         Point::ORIGIN,
@@ -271,7 +258,6 @@ fn cursor_outside_the_graph_claims_nothing() {
         Rc::new(Cell::new(None)),
         &renderer,
     );
-    let layout = Layout::with_offset(origin, &layout_node);
 
     // Just left of the widget origin: inside the window, outside the graph.
     let screen = Point::new(origin.x - 5.0, origin.y + 10.0);
@@ -294,7 +280,7 @@ fn cursor_outside_the_graph_claims_nothing() {
 fn pan_drag_claims_the_grabbing_cursor() {
     let origin = Vector::new(40.0, 100.0);
     let renderer = Recorder::detached();
-    let (mut graph, mut tree, layout_node) = graph_with_probe(
+    let (mut graph, mut tree, layout) = graph_with_probe(
         origin,
         Point::new(10.0, 20.0),
         Point::ORIGIN,
@@ -302,7 +288,6 @@ fn pan_drag_claims_the_grabbing_cursor() {
         Rc::new(Cell::new(None)),
         &renderer,
     );
-    let layout = Layout::with_offset(origin, &layout_node);
 
     // Press the default pan button (right) over empty canvas.
     let press = Point::new(origin.x + 300.0, origin.y + 300.0);
@@ -350,20 +335,17 @@ fn a_text_input_in_a_node_asks_for_the_text_cursor() {
     graph = graph.push_node(node(
         0usize,
         world,
-        Element::from(
-            iced_widget::text_input::<(), Theme, Recorder>("", "hello")
-                .on_input(|_| ())
-                .width(Length::Fixed(120.0)),
-        ),
+        iced_widget::text_input::<(), Theme>("", "hello")
+            .on_input(|_| ())
+            .width(Length::Fixed(120.0)),
     ));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Recorder>);
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         &renderer,
         &layout::Limits::new(Size::ZERO, VIEWPORT),
     );
-    let layout = Layout::with_offset(origin, &layout_node);
+    let layout = layout.move_to(Point::ORIGIN + origin);
     drive(
         &mut graph,
         &mut tree,
@@ -426,7 +408,7 @@ fn empty_probe() -> Point {
     Point::new(350.0, 350.0)
 }
 
-fn pin_body() -> iced::widget::Container<'static, (), Theme, Recorder> {
+fn pin_body() -> Container<'static, Text<'static, Theme>, Theme> {
     container(text("p"))
         .width(Length::Fixed(40.0))
         .height(Length::Fixed(20.0))
@@ -440,7 +422,7 @@ fn graph_with_cable(
     wired: bool,
     camera_pos: Point,
     camera_zoom: f32,
-) -> (Graph, Tree, layout::Node) {
+) -> (Graph, Tree, Layout) {
     let mut graph: Graph = NodeGraph::default()
         .width(Length::Fixed(GRAPH_SIZE.width))
         .height(Length::Fixed(GRAPH_SIZE.height))
@@ -465,13 +447,11 @@ fn graph_with_cable(
     graph = graph.push_anchor(anchor(CABLE_ANCHOR, CABLE_ANCHOR_AT));
     graph = graph.push_edge(edge((), PinRef::new(0, 0), PinRef::new(1, 0)).route([CABLE_ANCHOR]));
 
-    let mut tree = Tree::new(&graph as &dyn Widget<(), Theme, Recorder>);
-    let layout_node = graph.layout(
-        &mut tree,
+    let (mut tree, layout) = mount(
+        &mut graph,
         renderer,
         &layout::Limits::new(Size::ZERO, VIEWPORT),
     );
-    let layout = Layout::with_offset(Vector::ZERO, &layout_node);
     drive(
         &mut graph,
         &mut tree,
@@ -482,7 +462,7 @@ fn graph_with_cable(
         mouse::Cursor::Unavailable,
         renderer,
     );
-    (graph, tree, layout_node)
+    (graph, tree, layout)
 }
 
 /// The graph's own grabbable parts announce themselves before the click: the
@@ -496,10 +476,10 @@ fn an_anchors_grabbable_parts_offer_a_grab() {
     let renderer = Recorder::detached();
 
     let ask = |wired: bool, screen: Point| {
-        let (graph, tree, layout_node) = graph_with_cable(&renderer, wired, Point::ORIGIN, 1.0);
+        let (graph, tree, layout) = graph_with_cable(&renderer, wired, Point::ORIGIN, 1.0);
         graph.mouse_interaction(
             &tree,
-            Layout::with_offset(Vector::ZERO, &layout_node),
+            layout,
             mouse::Cursor::Available(screen),
             &Rectangle::new(Point::ORIGIN, VIEWPORT),
             &renderer,
@@ -539,10 +519,10 @@ fn the_grabbable_parts_offer_a_grab_at_any_zoom() {
 
     for zoom in [0.5, 2.0] {
         let ask = |world: Point| {
-            let (graph, tree, layout_node) = graph_with_cable(&renderer, true, Point::ORIGIN, zoom);
+            let (graph, tree, layout) = graph_with_cable(&renderer, true, Point::ORIGIN, zoom);
             graph.mouse_interaction(
                 &tree,
-                Layout::with_offset(Vector::ZERO, &layout_node),
+                layout,
                 mouse::Cursor::Available(to_screen(Vector::ZERO, world, Point::ORIGIN, zoom)),
                 &Rectangle::new(Point::ORIGIN, VIEWPORT),
                 &renderer,
@@ -570,8 +550,7 @@ fn the_grabbable_parts_offer_a_grab_at_any_zoom() {
 #[test]
 fn hovering_an_anchor_asks_for_a_frame() {
     let renderer = Recorder::detached();
-    let (mut graph, mut tree, layout_node) = graph_with_cable(&renderer, true, Point::ORIGIN, 1.0);
-    let layout = Layout::with_offset(Vector::ZERO, &layout_node);
+    let (mut graph, mut tree, layout) = graph_with_cable(&renderer, true, Point::ORIGIN, 1.0);
 
     let move_to = |graph: &mut Graph, tree: &mut Tree, to: Point| {
         drive(

@@ -6,10 +6,10 @@ mod content;
 use content::simple_node;
 use demo_common::{Demo, NodeContentStyle};
 use iced::{
-    Color, Element, Length, Point, Theme, Vector,
+    Color, Element, Length, Point, Theme, Vector, Widget,
     alignment::Horizontal,
     time::Instant,
-    widget::{Space, button, checkbox, column, container, row, scrollable, text},
+    widget::{Container, Space, button, checkbox, column, container, row, scrollable, text},
 };
 use iced_nodegraph::{
     Ids, KeyCombo, Keymap, ParticleStyle, PinInfo as NgPinInfo, PinRef, PinStatus, PinStyle,
@@ -602,28 +602,27 @@ impl demo_common::Demo for App {
         .width(Length::Fill);
 
         // Status bar with scrollable feedback log
-        let feedback_content: Element<Message> = if self.show_rules {
+        let feedback_content = if self.show_rules {
             self.rules_panel()
         } else {
-            let items: Vec<Element<Message>> = self
+            let items = self
                 .feedback
                 .iter()
                 .rev()
                 .take(10)
-                .map(|msg| text(msg).size(12).into())
-                .collect();
+                .map(|msg| text(msg).size(12));
             scrollable(column(items).spacing(2).padding(4))
                 .height(Length::Fixed(100.0))
-                .into()
+                .boxed()
         };
 
         let status_bar = container(feedback_content)
             .width(Length::Fill)
             .height(Length::Fixed(if self.show_rules { 180.0 } else { 100.0 }));
 
-        column![toolbar, Element::from(ng), status_bar]
+        column![toolbar, ng, status_bar]
             .height(Length::Fill)
-            .into()
+            .boxed()
     }
 }
 
@@ -650,7 +649,7 @@ impl App {
         ]
         .spacing(4)
         .padding(8);
-        scrollable(rules).height(Length::Fixed(180.0)).into()
+        scrollable(rules).height(Length::Fixed(180.0)).boxed()
     }
 
     fn number_generator_node<'a>(&self, theme: &Theme) -> Element<'a, Message> {
@@ -677,7 +676,7 @@ impl App {
             .spacing(4),
         ))
         .width(160.0)
-        .into()
+        .boxed()
     }
 
     fn math_operations_node<'a>(&self, theme: &Theme) -> Element<'a, Message> {
@@ -711,7 +710,7 @@ impl App {
             .spacing(4),
         ))
         .width(160.0)
-        .into()
+        .boxed()
     }
 
     fn type_converter_node<'a>(&self, theme: &Theme) -> Element<'a, Message> {
@@ -759,7 +758,7 @@ impl App {
             .spacing(4),
         ))
         .width(160.0)
-        .into()
+        .boxed()
     }
 
     fn display_node<'a>(&self, theme: &Theme) -> Element<'a, Message> {
@@ -786,7 +785,7 @@ impl App {
             .spacing(4),
         ))
         .width(160.0)
-        .into()
+        .boxed()
     }
 
     fn bidirectional_hub_node<'a>(&self, theme: &Theme) -> Element<'a, Message> {
@@ -827,19 +826,16 @@ impl App {
             .spacing(4),
         ))
         .width(160.0)
-        .into()
+        .boxed()
     }
 }
 
 /// Wraps a Right-side pin in a right-aligned container so the pin dot
 /// appears at the right edge of the node.
-fn right_pin<'a, Message: Clone + 'a>(
-    pin: impl Into<Element<'a, Message>>,
-) -> Element<'a, Message> {
+fn right_pin<'a, W>(pin: W) -> Container<'a, W> {
     container(pin)
         .width(Length::Fill)
         .align_x(Horizontal::Right)
-        .into()
 }
 
 pub fn main() -> iced::Result {

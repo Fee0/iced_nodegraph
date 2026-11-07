@@ -122,18 +122,24 @@ impl SharedSdfResources {
 
         let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("SDF Render Pipeline Layout"),
-            bind_group_layouts: &[&render_group0_layout],
+            bind_group_layouts: &[Some(&render_group0_layout)],
             ..Default::default()
         });
 
         let scatter_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("SDF Scatter Pipeline Layout"),
-            bind_group_layouts: &[&compute_group0_layout, &compute_scatter_group1_layout],
+            bind_group_layouts: &[
+                Some(&compute_group0_layout),
+                Some(&compute_scatter_group1_layout),
+            ],
             ..Default::default()
         });
         let sort_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("SDF Sort Pipeline Layout"),
-            bind_group_layouts: &[&compute_group0_layout, &compute_sort_group1_layout],
+            bind_group_layouts: &[
+                Some(&compute_group0_layout),
+                Some(&compute_sort_group1_layout),
+            ],
             ..Default::default()
         });
 
@@ -430,7 +436,7 @@ fn create_render_pipeline(
             })],
             compilation_options: PipelineCompilationOptions::default(),
         }),
-        multiview: None,
+        multiview_mask: None,
         cache: None,
     })
 }

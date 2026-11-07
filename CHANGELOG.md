@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- **Built on iced's development branch.** The libraries depend on
+  `iced_widget` / `iced_wgpu` from iced's `master` (0.15-dev, pinned to
+  revision `8ff48c42`) instead of 0.14, and on wgpu 30. Every iced master
+  break applies to the host: `view` returns `impl Widget<Message>` or an
+  `Element` built with `.boxed()`, and `.into()` no longer turns a widget into
+  an `Element`.
+- **No `From<NodeGraph>` / `From<NodePin>` for `Element`.** iced removed every
+  such impl; both types implement `Widget` (and `Meta`) and go wherever iced
+  takes `impl Widget`, or through `.boxed()`.
+- **Content takes `impl Widget`.** `node(..)`, `node_pin(..)` / `NodePin::new`
+  and `pin!` take `impl Widget<Message, Theme, Renderer>` instead of
+  `impl Into<Element<..>>`; an `Element` is still accepted, since it is a
+  widget.
+- **`node_header` / `node_footer` are generic over their content**, like iced's
+  `container`: they return `Container<'a, W, Theme>` and no longer name
+  `Message` or `Renderer`.
+
+### Changed
+
+- **A `Length::Fill` node body shrinks to its content** instead of resolving to
+  an infinite size (which was a debug assertion). Node bodies are laid out
+  against limits flagged infinite on both axes, so a `Fill` child stretches to
+  its widest sibling, which is what keeps a `node_header` inside a default
+  `column` (now `Length::Fit`) at the node's width.
+- **Operations reach pin content.** `NodePin` forwards `Widget::operate`, and
+  `NodeGraph::operate` reports itself as a container under its `id` and hands
+  node content the graph-clipped, camera-inverted viewport, so focus traversal,
+  text selection and `iced_test` selectors find widgets inside nodes and pins.
+- **Node pop-outs layer themselves.** Each pop-out (a pick list menu, a
+  tooltip) lays itself out against the window divided by the zoom and draws its
+  own layer inside the camera transform, which is iced master's overlay model.
+- **The demos drop the command palette.** `iced_palette` is still on iced 0.14,
+  so `hello_world` and `shader_editor` no longer offer it on this line.
+
 ## [0.5.0] - 2026-09-24
 
 ### Migrating from 0.4
